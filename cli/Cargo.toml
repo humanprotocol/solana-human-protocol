@@ -1,0 +1,28 @@
+[package]
+authors = ["Solana Maintainers <maintainers@solana.foundation>"]
+description = "Human Protocol Escrow Contract Command-line Utility"
+edition = "2018"
+license = "Apache-2.0"
+name = "hmt-escrow-cli"
+repository = "https://github.com/solana-labs/solana-program-library"
+version = "2.0.1"
+
+[dependencies]
+clap = "2.33.3"
+serde = "1.0.117"
+solana-account-decoder = "1.4.9"
+solana-clap-utils = "1.4.9"
+solana-cli-config = "1.4.9"
+solana-client = "1.4.9"
+solana-logger = "1.4.9"
+solana-sdk = "1.4.9"
+solana-program = "1.4.9"
+chrono = "0.4.19"
+hex = "0.4.2"
+csv = "1.1.5"
+hmt-escrow = { path="../program", features = [ "no-entrypoint" ] }
+spl-token = { version = "3.0", git = "https://github.com/solana-labs/solana-program-library", features = [ "no-entrypoint" ] }
+
+[[bin]]
+name = "hmt-escrow"
+path = "src/main.rs"
