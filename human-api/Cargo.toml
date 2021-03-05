@@ -1,0 +1,10 @@
+[package]
+name = "human-api"
+version = "0.1.0"
+authors = ["Solana Maintainers <maintainers@solana.foundation>"]
+edition = "2018"
+
+
+[dependencies]
+rocket = "0.4.7"
+rocket_contrib = "0.4.7"
