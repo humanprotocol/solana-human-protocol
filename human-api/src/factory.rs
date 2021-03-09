@@ -1,11 +1,22 @@
-use rocket_contrib::json::JsonValue;
+use rocket_contrib::json::{Json, JsonValue};
+use serde::{Deserialize, Serialize};
 
-#[get("/factory?<_program_address>&<_factory_address>")]
-pub fn factory_jobs(_program_address: String, _factory_address: String) -> JsonValue {
+#[derive(Serialize, Deserialize)]
+pub struct InitFactoryArgs {
+    /// Gas payer pub key
+    pub gasPayer: String,
+    /// solana_sdk::signature::Keypair in Base58 string
+    pub gasPayerPrivate: String,
+}
+
+///  Returns addresses of all jobs deployed in the factory
+#[get("/factory?<_address>")]
+pub fn get_factory(_address: String) -> JsonValue {
     unimplemented!();
 }
 
-#[post("/factory")]
-pub fn create_factory() -> JsonValue {
+/// Creates a new factory and returns the address
+#[post("/factory", format = "json", data = "<_init_args>")]
+pub fn new_factory(_init_args: Json<InitFactoryArgs>) -> JsonValue {
     unimplemented!();
 }
