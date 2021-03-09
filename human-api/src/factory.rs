@@ -1,5 +1,5 @@
 use rocket_contrib::json::{Json, JsonValue};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct InitFactoryArgs {
@@ -16,7 +16,7 @@ pub fn get_factory(_address: String) -> JsonValue {
 }
 
 /// Creates a new factory and returns the address
-#[post("/factory", format="json", data="<_init_args>")]
+#[post("/factory", format = "json", data = "<_init_args>")]
 pub fn new_factory(_init_args: Json<InitFactoryArgs>) -> JsonValue {
     unimplemented!();
 }

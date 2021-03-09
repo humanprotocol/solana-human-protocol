@@ -1,5 +1,5 @@
 use rocket_contrib::json::{Json, JsonValue};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct InitJobArgs {
@@ -58,7 +58,7 @@ pub struct TrustedHandlersArgs {
 }
 
 /// Creates a new job and returns the address
-#[post("/job", format="json", data="<_job_init_args>")]
+#[post("/job", format = "json", data = "<_job_init_args>")]
 pub fn new_job(_job_init_args: Json<InitJobArgs>) -> JsonValue {
     unimplemented!();
 }
@@ -112,19 +112,27 @@ pub fn complete_job(_address: String) -> JsonValue {
 }
 
 /// Store job results
-#[post("/storeIntermediateResults", format="json", data="<_store_results_args>")]
+#[post(
+    "/storeIntermediateResults",
+    format = "json",
+    data = "<_store_results_args>"
+)]
 pub fn store_job_intermediate_results(_store_results_args: Json<StoreResultsArgs>) -> JsonValue {
     unimplemented!();
 }
 
 /// Performs a payout to multiple Solana addresses
-#[post("/bulkPayout", format="json", data="<_bulk_payout_args>")]
+#[post("/bulkPayout", format = "json", data = "<_bulk_payout_args>")]
 pub fn bulk_payout(_bulk_payout_args: Json<BulkPayoutArgs>) -> JsonValue {
     unimplemented!();
 }
 
 /// Add trusted handlers that can freely transact with the contract
-#[post("/addTrustedHandlers", format = "json", data="<_trusted_handlers_args>")]
+#[post(
+    "/addTrustedHandlers",
+    format = "json",
+    data = "<_trusted_handlers_args>"
+)]
 pub fn add_trusted_handlers(_trusted_handlers_args: Json<TrustedHandlersArgs>) -> JsonValue {
     unimplemented!();
 }
