@@ -13,6 +13,16 @@ use std::{convert::TryInto, mem::size_of};
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum EscrowInstruction {
+    /// Initialize a new Factory.
+    ///
+    /// This instruction receives new account and initialize new Factory
+    ///
+    /// 0. [w] Account for the Factory
+    FactoryInitialize {
+        /// Factory's version
+        version: u8,
+    },
+
     /// Initializes a new escrow.
     ///
     /// This instructions receives new uninitialized account and initializes
@@ -22,12 +32,13 @@ pub enum EscrowInstruction {
     /// Accounts expected by this instruction:
     ///
     /// 0. [w] Account for the new escrow
-    /// 1. [] Clock sysvar
-    /// 2. [] Mint account for token managed by this escrow
-    /// 3. [] Token account where escrow funds will be stored
-    /// 4. [] Escrow launcher account
-    /// 5. [] Escrow canceler account
-    /// 6. [] Canceler's token account to receive escrow funds
+    /// 1. [] Factory account this Escrow belongs to
+    /// 2. [] Clock sysvar
+    /// 3. [] Mint account for token managed by this escrow
+    /// 4. [] Token account where escrow funds will be stored
+    /// 5. [] Escrow launcher account
+    /// 6. [] Escrow canceler account
+    /// 7. [] Canceler's token account to receive escrow funds
     Initialize {
         /// Escrow duration in seconds, escrow can only be canceled after its duration expires
         duration: u64,
@@ -144,10 +155,14 @@ impl EscrowInstruction {
             .ok_or(ProgramError::InvalidInstructionData)?;
         Ok(match tag {
             1 => {
+                let (version, _) = Self::unpack_u8(rest)?;
+                Self::FactoryInitialize { version }
+            }
+            2 => {
                 let (duration, _rest) = Self::unpack_u64(rest)?;
                 Self::Initialize { duration }
             }
-            2 => {
+            3 => {
                 let (reputation_oracle_stake, rest) = Self::unpack_u8(rest)?;
                 let (recording_oracle_stake, rest) = Self::unpack_u8(rest)?;
                 let (manifest_url, rest) = Self::unpack_url(rest)?;
@@ -159,7 +174,7 @@ impl EscrowInstruction {
                     manifest_hash,
                 }
             }
-            3 => {
+            4 => {
                 let (total_amount, rest) = Self::unpack_u64(rest)?;
                 let (total_recipients, rest) = Self::unpack_u64(rest)?;
                 let (final_results_url, rest) = Self::unpack_url(rest)?;
@@ -171,12 +186,12 @@ impl EscrowInstruction {
                     final_results_hash,
                 }
             }
-            4 => {
+            5 => {
                 let (amount, _rest) = Self::unpack_u64(rest)?;
                 Self::Payout { amount }
             }
-            5 => Self::Cancel,
-            6 => Self::Complete,
+            6 => Self::Cancel,
+            7 => Self::Complete,
             _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
@@ -185,8 +200,12 @@ impl EscrowInstruction {
     pub fn pack(&self) -> Vec<u8> {
         let mut buf: Vec<u8> = Vec::with_capacity(size_of::<Self>());
         match *self {
-            Self::Initialize { duration } => {
+            Self::FactoryInitialize { version } => {
                 buf.push(1);
+                buf.extend(&version.to_le_bytes());
+            }
+            Self::Initialize { duration } => {
+                buf.push(2);
                 buf.extend(&duration.to_le_bytes());
             }
             Self::Setup {
@@ -195,7 +214,7 @@ impl EscrowInstruction {
                 manifest_url,
                 manifest_hash,
             } => {
-                buf.push(2);
+                buf.push(3);
                 buf.push(reputation_oracle_stake);
                 buf.push(recording_oracle_stake);
                 buf.extend(manifest_url.as_ref());
@@ -207,18 +226,18 @@ impl EscrowInstruction {
                 final_results_url,
                 final_results_hash,
             } => {
-                buf.push(3);
+                buf.push(4);
                 buf.extend(&total_amount.to_le_bytes());
                 buf.extend(&total_recipients.to_le_bytes());
                 buf.extend(final_results_url.as_ref());
                 buf.extend(final_results_hash.as_ref());
             }
             Self::Payout { amount } => {
-                buf.push(4);
+                buf.push(5);
                 buf.extend(&amount.to_le_bytes());
             }
-            Self::Cancel => buf.push(5),
-            Self::Complete => buf.push(6),
+            Self::Cancel => buf.push(6),
+            Self::Complete => buf.push(7),
         }
         buf
     }
@@ -274,10 +293,28 @@ impl EscrowInstruction {
     }
 }
 
+/// Creates `FactoryInitialize` instruction.
+pub fn factory_initialize(
+    escrow_program_id: &Pubkey,
+    factory: &Pubkey,
+    version: u8,
+) -> Result<Instruction, ProgramError> {
+    let data = EscrowInstruction::FactoryInitialize { version }.pack();
+
+    let accounts = vec![AccountMeta::new(*factory, false)];
+
+    Ok(Instruction {
+        program_id: *escrow_program_id,
+        accounts,
+        data,
+    })
+}
+
 /// Creates `Initialize` instruction.
 pub fn initialize(
     escrow_program_id: &Pubkey,
     escrow: &Pubkey,
+    factory: &Pubkey,
     token_mint: &Pubkey,
     token_account: &Pubkey,
     launcher: &Pubkey,
@@ -289,6 +326,7 @@ pub fn initialize(
 
     let accounts = vec![
         AccountMeta::new(*escrow, false),
+        AccountMeta::new_readonly(*factory, false),
         AccountMeta::new_readonly(sysvar::clock::id(), false),
         AccountMeta::new_readonly(*token_mint, false),
         AccountMeta::new_readonly(*token_account, false),
@@ -467,7 +505,7 @@ mod test {
             duration: 2592000, // 0x0000000000278D00
         };
         let packed = check.pack();
-        let expect: Vec<u8> = vec![1, 0x00, 0x8D, 0x27, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let expect: Vec<u8> = vec![2, 0x00, 0x8D, 0x27, 0x00, 0x00, 0x00, 0x00, 0x00];
         assert_eq!(packed, expect);
         let unpacked = EscrowInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);
@@ -479,7 +517,7 @@ mod test {
             manifest_hash: DataHash::new_from_array([11; 20]),
         };
         let packed = check.pack();
-        let mut expect: Vec<u8> = vec![2, 5, 10];
+        let mut expect: Vec<u8> = vec![3, 5, 10];
         expect.extend(&[10; URL_LEN]);
         expect.extend(&[11; 20]);
         assert_eq!(packed, expect);
@@ -493,7 +531,7 @@ mod test {
             final_results_hash: DataHash::new_from_array([22; 20]),
         };
         let packed = check.pack();
-        let mut expect: Vec<u8> = vec![3];
+        let mut expect: Vec<u8> = vec![4];
         expect.extend(&[0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00]);
         expect.extend(&[0xE8, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         expect.extend(&[21; URL_LEN]);
@@ -506,21 +544,21 @@ mod test {
             amount: 1000000000000, // 0x000000E8D4A51000
         };
         let packed = check.pack();
-        let expect: Vec<u8> = vec![4, 0x00, 0x10, 0xA5, 0xD4, 0xE8, 0x00, 0x00, 0x00];
+        let expect: Vec<u8> = vec![5, 0x00, 0x10, 0xA5, 0xD4, 0xE8, 0x00, 0x00, 0x00];
         assert_eq!(packed, expect);
         let unpacked = EscrowInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);
 
         let check = EscrowInstruction::Cancel;
         let packed = check.pack();
-        let expect: Vec<u8> = vec![5];
+        let expect: Vec<u8> = vec![6];
         assert_eq!(packed, expect);
         let unpacked = EscrowInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);
 
         let check = EscrowInstruction::Complete;
         let packed = check.pack();
-        let expect: Vec<u8> = vec![6];
+        let expect: Vec<u8> = vec![7];
         assert_eq!(packed, expect);
         let unpacked = EscrowInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);

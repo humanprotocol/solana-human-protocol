@@ -3,15 +3,14 @@ use clap::{
     crate_description, crate_name, crate_version, value_t, value_t_or_exit, App, AppSettings, Arg,
     SubCommand,
 };
-use hmt_escrow::state::DataHash;
-use hmt_escrow::state::DataUrl;
+use hmt_escrow::state::{DataHash, DataUrl, Escrow, Factory};
 use hmt_escrow::{
-    self, 
+    self,
     instruction::{
+        cancel as cancel_escrow, complete as complete_escrow, factory_initialize,
         initialize as initialize_escrow, payout, setup as setup_escrow, store_results,
-        cancel as cancel_escrow, complete as complete_escrow,
     },
-    processor::Processor as EscrowProcessor, state::Escrow,
+    processor::Processor as EscrowProcessor,
 };
 use solana_clap_utils::{
     input_parsers::{pubkey_of, value_of},
@@ -69,8 +68,45 @@ fn check_fee_payer_balance(config: &Config, required_balance: u64) -> Result<(),
     }
 }
 
+fn command_create_factory(config: &Config, version: u8) -> CommandResult {
+    let factory_account = Keypair::new();
+    println!("Creating Factory account: {}", factory_account.pubkey());
+
+    let factory_account_balance = config
+        .rpc_client
+        .get_minimum_balance_for_rent_exemption(Factory::LEN)?;
+
+    let instructions: Vec<Instruction> = vec![
+        // Create Factory account
+        system_instruction::create_account(
+            &config.fee_payer.pubkey(),
+            &factory_account.pubkey(),
+            factory_account_balance,
+            Factory::LEN as u64,
+            &hmt_escrow::id(),
+        ),
+        // Initialize Factory account
+        factory_initialize(&hmt_escrow::id(), &factory_account.pubkey(), version)?,
+    ];
+
+    let mut signers = vec![config.fee_payer.as_ref(), &factory_account];
+
+    let mut transaction =
+        Transaction::new_with_payer(&instructions, Some(&config.fee_payer.pubkey()));
+
+    let (recent_blockhash, fee_calculator) = config.rpc_client.get_recent_blockhash()?;
+    check_fee_payer_balance(
+        config,
+        factory_account_balance + fee_calculator.calculate_fee(&transaction.message()),
+    )?;
+    unique_signers!(signers);
+    transaction.sign(&signers, recent_blockhash);
+    Ok(Some(transaction))
+}
+
 fn command_create(
     config: &Config,
+    factory: &Pubkey,
     mint: &Pubkey,
     launcher: &Option<Pubkey>,
     canceler: &Option<Pubkey>,
@@ -178,6 +214,7 @@ fn command_create(
         initialize_escrow(
             &hmt_escrow::id(),
             &escrow_account.pubkey(),
+            factory,
             mint,
             &escrow_token_account.pubkey(),
             &launcher,
@@ -516,7 +553,7 @@ fn command_payout(config: &Config, escrow: &Pubkey, file_name: &str) -> CommandR
                 let amount: Option<f64> = record.get(1).unwrap_or_default().parse::<f64>().ok();
                 match (recipient, amount) {
                     (Some(recipient), Some(amount)) => Some(PayoutRecord { recipient, amount }),
-                    _ => None
+                    _ => None,
                 }
             })
         })
@@ -605,8 +642,16 @@ fn command_payout(config: &Config, escrow: &Pubkey, file_name: &str) -> CommandR
     if !instructions.is_empty() {
         let total_fees = escrow_info.reputation_oracle_stake + escrow_info.recording_oracle_stake;
         if total_fees != 0 {
-            println!("Sending {} to {} recipients", instructions_ui_amount, instructions.len());
-            println!("{}% ({}) will be used to pay oracle fees", total_fees, total_fees as f64 * instructions_ui_amount / 100.0);
+            println!(
+                "Sending {} to {} recipients",
+                instructions_ui_amount,
+                instructions.len()
+            );
+            println!(
+                "{}% ({}) will be used to pay oracle fees",
+                total_fees,
+                total_fees as f64 * instructions_ui_amount / 100.0
+            );
         }
 
         let mut transaction =
@@ -631,17 +676,15 @@ fn command_cancel(config: &Config, escrow: &Pubkey) -> CommandResult {
         EscrowProcessor::authority_id(&hmt_escrow::id(), &escrow, escrow_info.bump_seed)?;
 
     let mut transaction = Transaction::new_with_payer(
-        &[
-            cancel_escrow(
-                &hmt_escrow::id(),
-                &escrow,
-                &config.owner.pubkey(),
-                &escrow_info.token_account,
-                &authority,
-                &escrow_info.canceler_token_account,
-                &spl_token::id(),
-            )?,
-        ],
+        &[cancel_escrow(
+            &hmt_escrow::id(),
+            &escrow,
+            &config.owner.pubkey(),
+            &escrow_info.token_account,
+            &authority,
+            &escrow_info.canceler_token_account,
+            &spl_token::id(),
+        )?],
         Some(&config.fee_payer.pubkey()),
     );
 
@@ -655,13 +698,11 @@ fn command_cancel(config: &Config, escrow: &Pubkey) -> CommandResult {
 
 fn command_complete(config: &Config, escrow: &Pubkey) -> CommandResult {
     let mut transaction = Transaction::new_with_payer(
-        &[
-            complete_escrow(
-                &hmt_escrow::id(),
-                &escrow,
-                &config.owner.pubkey(),
-            )?,
-        ],
+        &[complete_escrow(
+            &hmt_escrow::id(),
+            &escrow,
+            &config.owner.pubkey(),
+        )?],
         Some(&config.fee_payer.pubkey()),
     );
 
@@ -743,7 +784,25 @@ fn main() {
                      Defaults to the client keypair.",
                 ),
         )
+        .subcommand(SubCommand::with_name("create-factory").about("Create a new Factory account")
+            .arg(
+                Arg::with_name("version")
+                    .index(1)
+                    .validator(is_parsable::<u8>)
+                    .takes_value(true)
+                    .required(true)
+                    .help("Factory's version"),
+            ))
         .subcommand(SubCommand::with_name("create").about("Create a new escrow")
+            .arg(
+                Arg::with_name("factory")
+                    .long("factory")
+                    .validator(is_pubkey)
+                    .value_name("ADDRESS")
+                    .takes_value(true)
+                    .required(true)
+                    .help("Factory address new Escrow will belongs to"),
+            )
             .arg(
                 Arg::with_name("mint")
                     .long("mint")
@@ -1009,7 +1068,12 @@ fn main() {
     solana_logger::setup_with_default("solana=info");
 
     let _ = match matches.subcommand() {
+        ("create-factory", Some(arg_matches)) => {
+            let version = value_t_or_exit!(arg_matches, "version", u8);
+            command_create_factory(&config, version)
+        }
         ("create", Some(arg_matches)) => {
+            let factory: Pubkey = pubkey_of(arg_matches, "factory").unwrap();
             let mint: Pubkey = pubkey_of(arg_matches, "mint").unwrap();
             let launcher: Option<Pubkey> = pubkey_of(arg_matches, "launcher");
             let canceler: Option<Pubkey> = pubkey_of(arg_matches, "canceler");
@@ -1017,6 +1081,7 @@ fn main() {
             let duration = value_t_or_exit!(arg_matches, "duration", u64);
             command_create(
                 &config,
+                &factory,
                 &mint,
                 &launcher,
                 &canceler,
