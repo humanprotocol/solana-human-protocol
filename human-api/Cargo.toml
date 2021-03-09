@@ -4,8 +4,16 @@ version = "0.1.0"
 authors = ["Solana Maintainers <maintainers@solana.foundation>"]
 edition = "2018"
 
+[features]
+no-entrypoint = []
+test-bpf=[]
+
 
 [dependencies]
 rocket = "0.4.7"
 rocket_contrib = "0.4.7"
 serde = { version = "1.0", features = ["derive"] }
+solana-client = "1.4.9"
+solana-sdk = "1.4.9"
+solana-program = "1.4.9"
+hmt-escrow = { path="../program/" }

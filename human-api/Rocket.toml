@@ -1,0 +1,8 @@
+[global]
+node_endpoint = "https://devnet.solana.com"
+
+[development]
+node_endpoint = "https://devnet.solana.com"
+
+[production]
+node_endpoint = "https://devnet.solana.com"
