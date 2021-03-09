@@ -42,6 +42,10 @@ pub enum EscrowError {
     /// Too many payouts
     #[error("Too many payouts")]
     TooManyPayouts,
+
+    /// Factory isn't initialized
+    #[error("Factory isn't initialized")]
+    FactoryNotInitialized,
 }
 
 const BASE_ERROR_CODE: u32 = 0x100;

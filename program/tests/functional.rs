@@ -12,6 +12,8 @@ use solana_sdk::{
 use std::str::FromStr;
 const DECIMALS: u8 = 9;
 
+const DEFAULT_FACTORY_VERSION: u8 = 1;
+
 fn program_test() -> ProgramTest {
     let mut pc = ProgramTest::new(
         "hmt_escrow",
@@ -102,6 +104,7 @@ async fn create_escrow(
     payer: &Keypair,
     recent_blockhash: &Hash,
     escrow_account: &Keypair,
+    factory_account: &Keypair,
     escrow_token_account: &Keypair,
     launcher: &Pubkey,
     canceler: &Pubkey,
@@ -124,6 +127,7 @@ async fn create_escrow(
             instruction::initialize(
                 &id(),
                 &escrow_account.pubkey(),
+                &factory_account.pubkey(),
                 token_mint,
                 &escrow_token_account.pubkey(),
                 &launcher,
@@ -136,6 +140,34 @@ async fn create_escrow(
         Some(&payer.pubkey()),
     );
     transaction.sign(&[payer, escrow_account], *recent_blockhash);
+    banks_client.process_transaction(transaction).await.unwrap();
+}
+
+async fn create_factory(
+    banks_client: &mut BanksClient,
+    payer: &Keypair,
+    recent_blockhash: &Hash,
+    factory_account: &Keypair,
+    version: u8,
+) {
+    let rent = banks_client.get_rent().await.unwrap();
+    let account_rent = rent.minimum_balance(state::Factory::LEN);
+
+    let mut transaction = Transaction::new_with_payer(
+        &[
+            system_instruction::create_account(
+                &payer.pubkey(),
+                &factory_account.pubkey(),
+                account_rent,
+                state::Factory::LEN as u64,
+                &id(),
+            ),
+            instruction::factory_initialize(&id(), &factory_account.pubkey(), version).unwrap(),
+        ],
+        Some(&payer.pubkey()),
+    );
+
+    transaction.sign(&[payer, factory_account], *recent_blockhash);
     banks_client.process_transaction(transaction).await.unwrap();
 }
 
@@ -308,6 +340,7 @@ async fn mint_to_escrow(
 
 struct EscrowAccount {
     pub escrow: Keypair,
+    pub factory: Keypair,
     pub token_mint: Keypair,
     pub escrow_token_account: Keypair,
     pub launcher: Keypair,
@@ -335,6 +368,7 @@ struct EscrowAccount {
 impl EscrowAccount {
     pub fn new() -> Self {
         let escrow = Keypair::new();
+        let factory = Keypair::new();
         let token_mint = Keypair::new();
         let escrow_token_account = Keypair::new();
         let launcher = Keypair::new();
@@ -366,6 +400,7 @@ impl EscrowAccount {
         };
         Self {
             escrow,
+            factory,
             token_mint,
             escrow_token_account,
             launcher,
@@ -427,11 +462,20 @@ impl EscrowAccount {
             &self.canceler.pubkey(),
         )
         .await;
+        create_factory(
+            &mut banks_client,
+            &payer,
+            &recent_blockhash,
+            &self.factory,
+            DEFAULT_FACTORY_VERSION,
+        )
+        .await;
         create_escrow(
             &mut banks_client,
             &payer,
             &recent_blockhash,
             &self.escrow,
+            &self.factory,
             &self.escrow_token_account,
             &self.launcher.pubkey(),
             &self.canceler.pubkey(),

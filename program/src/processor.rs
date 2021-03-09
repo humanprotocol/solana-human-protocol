@@ -133,6 +133,28 @@ impl Processor {
         )
     }
 
+    /// Processes `FactoryInitialize` instruction.
+    pub fn process_factory_initialize(
+        _program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        version: u8,
+    ) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+        let factory_info = next_account_info(account_info_iter)?;
+
+        let factory = Factory::unpack_unchecked(&factory_info.data.borrow())?;
+
+        // Only new unitialized accounts are supported
+        if factory.is_initialized() {
+            return Err(ProgramError::AccountAlreadyInitialized);
+        }
+
+        let factory = Factory { version };
+
+        Factory::pack(factory, &mut factory_info.data.borrow_mut())?;
+        Ok(())
+    }
+
     /// Processes `Initialize` instruction.
     pub fn process_initialize(
         program_id: &Pubkey,
@@ -141,6 +163,7 @@ impl Processor {
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         let escrow_info = next_account_info(account_info_iter)?;
+        let factory_info = next_account_info(account_info_iter)?;
         let clock = &Clock::from_account_info(next_account_info(account_info_iter)?)?;
 
         let token_mint_info = next_account_info(account_info_iter)?;
@@ -151,9 +174,16 @@ impl Processor {
 
         let escrow = Box::new(Escrow::unpack_unchecked(&escrow_info.data.borrow())?);
 
+        let factory = Factory::unpack(&factory_info.data.borrow())?;
+
         // Only new unitialized accounts are supported
         if escrow.is_initialized() {
             return Err(ProgramError::AccountAlreadyInitialized);
+        }
+
+        // Escrow has to belong to initialized Factory
+        if !factory.is_initialized() {
+            return Err(EscrowError::FactoryNotInitialized.into());
         }
 
         // Check duration validity
@@ -498,6 +528,10 @@ impl Processor {
         let instruction = EscrowInstruction::unpack(input)?;
 
         match instruction {
+            EscrowInstruction::FactoryInitialize { version } => {
+                info!("Instruction: Initialize Factory");
+                Self::process_factory_initialize(program_id, accounts, version)
+            }
             EscrowInstruction::Initialize { duration } => {
                 info!("Instruction: Initialize");
                 Self::process_initialize(program_id, accounts, duration)
@@ -563,6 +597,7 @@ impl PrintProgramError for EscrowError {
             EscrowError::NotEnoughBalance => info!("Error: not enough balance"),
             EscrowError::OracleNotInitialized => info!("Error: oracle not initialized"),
             EscrowError::TooManyPayouts => info!("Error: too many payouts"),
+            EscrowError::FactoryNotInitialized => info!("Factory isn't initialized"),
         }
     }
 }

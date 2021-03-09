@@ -14,6 +14,38 @@ use std::{fmt, mem, str::FromStr};
 /// Size for the URL field
 pub const URL_LEN: usize = 256;
 
+/// Uninitialized Factory version
+pub const UNINITIALIZED_FACTORY_VERSION: u8 = 0;
+
+/// Factory account
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Factory {
+    /// Factory's version
+    pub version: u8,
+}
+
+impl Sealed for Factory {}
+impl IsInitialized for Factory {
+    fn is_initialized(&self) -> bool {
+        self.version != UNINITIALIZED_FACTORY_VERSION
+    }
+}
+
+impl Pack for Factory {
+    const LEN: usize = mem::size_of::<Self>();
+
+    /// Packs a [Factory](struct.Factory.html) into a byte buffer.
+    fn pack_into_slice(&self, output: &mut [u8]) {
+        output[0] = self.version;
+    }
+
+    /// Unpacks a byte buffer into a [Factory](struct.Factory.html).
+    fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {
+        Ok(Factory { version: input[0] })
+    }
+}
+
 /// Escrow state.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, TryFromPrimitive)]
@@ -125,6 +157,8 @@ impl DataUrl {
 pub struct Escrow {
     /// Current state of escrow entity: Uninitialized, Launched, Pending, Partial, Paid, Complete, Cancelled
     pub state: EscrowState,
+    /// Factory account this Escrow belongs to
+    pub factory: Pubkey,
     /// Escrow expiration timestamp
     pub expires: UnixTimestamp,
     /// Program authority bump seed
@@ -177,7 +211,7 @@ impl IsInitialized for Escrow {
 }
 
 impl Pack for Escrow {
-    const LEN: usize = 388 + URL_LEN + URL_LEN;
+    const LEN: usize = 420 + URL_LEN + URL_LEN;
 
     /// Packs a [EscrowInfo](struct.EscrowInfo.html) into a byte buffer.
     fn pack_into_slice(&self, output: &mut [u8]) {
@@ -202,12 +236,13 @@ impl Pack for Escrow {
             sent_amount_dst,
             sent_recipients_dst,
             state_dst,
+            factory_acc,
             manifest_url_dst,
             manifest_hash_dst,
             final_results_url_dst,
             final_results_hash_dst,
         ) = mut_array_refs![
-            output, 8, 1, 32, 32, 36, 36, 1, 36, 36, 1, 32, 32, 32, 8, 8, 8, 8, 1, URL_LEN, 20,
+            output, 8, 1, 32, 32, 36, 36, 1, 36, 36, 1, 32, 32, 32, 8, 8, 8, 8, 1, 32, URL_LEN, 20,
             URL_LEN, 20
         ];
         expires_dst.copy_from_slice(&self.expires.to_le_bytes());
@@ -234,6 +269,7 @@ impl Pack for Escrow {
         sent_amount_dst.copy_from_slice(&self.sent_amount.to_le_bytes());
         sent_recipients_dst.copy_from_slice(&self.sent_recipients.to_le_bytes());
         state_dst[0] = self.state as u8;
+        factory_acc.copy_from_slice(self.factory.as_ref());
         manifest_url_dst.copy_from_slice(self.manifest_url.as_ref());
         manifest_hash_dst.copy_from_slice(self.manifest_hash.as_ref());
         final_results_url_dst.copy_from_slice(self.final_results_url.as_ref());
@@ -263,12 +299,13 @@ impl Pack for Escrow {
             sent_amount_src,
             sent_recipients_src,
             state_src,
+            factory_acc,
             manifest_url_src,
             manifest_hash_src,
             final_results_url_src,
             final_results_hash_src,
         ) = array_refs![
-            input, 8, 1, 32, 32, 36, 36, 1, 36, 36, 1, 32, 32, 32, 8, 8, 8, 8, 1, URL_LEN, 20,
+            input, 8, 1, 32, 32, 36, 36, 1, 36, 36, 1, 32, 32, 32, 8, 8, 8, 8, 1, 32, URL_LEN, 20,
             URL_LEN, 20
         ];
         Ok(Escrow {
@@ -298,6 +335,8 @@ impl Pack for Escrow {
             sent_recipients: u64::from_le_bytes(*sent_recipients_src),
             state: EscrowState::try_from_primitive(state_src[0])
                 .or(Err(ProgramError::InvalidAccountData))?,
+
+            factory: Pubkey::new_from_array(*factory_acc),
 
             manifest_url: DataUrl::new_from_array(*manifest_url_src),
             manifest_hash: DataHash::new_from_array(*manifest_hash_src),
@@ -341,6 +380,7 @@ mod test {
             expires: 1606402240,
             bump_seed: 250,
             state: EscrowState::Launched,
+            factory: Pubkey::new_from_array([6; 32]),
             token_mint: Pubkey::new_from_array([1; 32]),
             token_account: Pubkey::new_from_array([2; 32]),
             reputation_oracle: COption::Some(Pubkey::new_from_array([3; 32])),
@@ -361,7 +401,7 @@ mod test {
             final_results_url: DataUrl::new_from_array([12; URL_LEN]),
             final_results_hash: DataHash::new_from_array([13; 20]),
         };
-        let mut packed_obj: [u8; 4484] = [0; 4484];
+        let mut packed_obj: [u8; Escrow::LEN] = [0; Escrow::LEN];
         Escrow::pack(obj, &mut packed_obj).unwrap();
         let unpacked_obj = Escrow::unpack(&packed_obj).unwrap();
         assert_eq!(unpacked_obj, obj);
