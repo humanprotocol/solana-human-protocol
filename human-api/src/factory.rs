@@ -1,5 +1,6 @@
 use crate::*;
 
+use crate::data::*;
 use hmt_escrow;
 use hmt_escrow::instruction::factory_initialize;
 use hmt_escrow::state::Factory;
@@ -14,27 +15,6 @@ use solana_sdk::{
     transaction::Transaction,
 };
 
-#[allow(non_snake_case)]
-#[derive(Serialize, Deserialize)]
-pub struct InitFactoryArgs {
-    /// Gas payer pub key
-    pub gasPayer: String,
-    /// solana_sdk::signature::Keypair in Base58 string
-    pub gasPayerPrivate: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Response {
-    /// Response data
-    pub data: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct FactoryJobs {
-    /// Response data
-    pub jobs: Vec<String>,
-}
-
 ///  Returns addresses of all jobs deployed in the factory
 #[get("/factory?<address>")]
 pub fn get_factory(address: String, config: State<Config>) -> Json<FactoryJobs> {
@@ -43,7 +23,7 @@ pub fn get_factory(address: String, config: State<Config>) -> Json<FactoryJobs> 
     let memcp = Memcmp {
         offset: config.offset,
         bytes: MemcmpEncodedBytes::Binary(address),
-        encoding: None
+        encoding: None,
     };
     let filters = RpcFilterType::Memcmp(memcp);
     let configs = RpcProgramAccountsConfig {
@@ -54,10 +34,16 @@ pub fn get_factory(address: String, config: State<Config>) -> Json<FactoryJobs> 
             ..RpcAccountInfoConfig::default()
         },
     };
-    let accounts_with_config = config.rpc_client.get_program_accounts_with_config(&human_protocol_program, configs).unwrap();
+    let accounts_with_config = config
+        .rpc_client
+        .get_program_accounts_with_config(&human_protocol_program, configs)
+        .unwrap();
 
     Json(FactoryJobs {
-        jobs: accounts_with_config.iter().map(|account_data| account_data.0.to_string()).collect::<Vec<_>>(),
+        jobs: accounts_with_config
+            .iter()
+            .map(|account_data| account_data.0.to_string())
+            .collect::<Vec<_>>(),
     })
 }
 
