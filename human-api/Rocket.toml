@@ -1,0 +1,14 @@
+[global]
+node_endpoint = "https://devnet.solana.com"
+human_protocol_program = "rK6j1hcHDTWerdrAS2w3BFifjHkPrRrnGYC7GRNwqKF"
+offset = 348
+
+[development]
+node_endpoint = "https://devnet.solana.com"
+human_protocol_program = "rK6j1hcHDTWerdrAS2w3BFifjHkPrRrnGYC7GRNwqKF"
+offset = 348
+
+[production]
+node_endpoint = "https://devnet.solana.com"
+human_protocol_program = "rK6j1hcHDTWerdrAS2w3BFifjHkPrRrnGYC7GRNwqKF"
+offset = 348
