@@ -72,11 +72,10 @@ pub enum EscrowInstruction {
         manifest_hash: DataHash,
     },
 
-    /// Store job results
+    /// Store job's final url and results hash
     ///
-    /// When the job is over save total amount of tokens, number of recepients and
-    /// final results URL and hash. Must be signed by one of the trusted
-    /// handlers.
+    /// When the job is over save final results URL and hash.
+    /// Must be signed by one of the trusted handlers.
     ///
     /// Accounts expected by this instruction:
     ///
@@ -84,17 +83,28 @@ pub enum EscrowInstruction {
     /// 1. [s] Trusted handler signing this transaction
     /// 2. [] Clock sysvar
     StoreResults {
-        /// Total amount to pay
-        total_amount: u64,
-
-        /// Total number of recipients
-        total_recipients: u64,
-
         /// Final results URL
         final_results_url: DataUrl,
 
         /// Final results hash
         final_results_hash: DataHash,
+    },
+    /// Store job's total amount and total recipients
+    /// 
+    /// When the job is over save total amount of tokens and number of recipients.
+    /// Must be signed by one of the trusted handlers.
+    /// 
+    /// Accounts expected by this instruction:
+    /// 
+    /// 0. [w] Escrow account
+    /// 1. [s] Trusted handler signing this transaction
+    /// 2. [] Clock sysvar
+    StoreFinalAmounts {
+        /// Total amount to pay
+        total_amount: u64,
+
+        /// Total number of recipients
+        total_recipients: u64,
     },
     /// Do a single payout
     ///
@@ -175,23 +185,27 @@ impl EscrowInstruction {
                 }
             }
             4 => {
-                let (total_amount, rest) = Self::unpack_u64(rest)?;
-                let (total_recipients, rest) = Self::unpack_u64(rest)?;
                 let (final_results_url, rest) = Self::unpack_url(rest)?;
                 let (final_results_hash, _rest) = Self::unpack_hash(rest)?;
                 Self::StoreResults {
-                    total_amount,
-                    total_recipients,
                     final_results_url,
                     final_results_hash,
                 }
             }
             5 => {
+                let (total_amount, rest) = Self::unpack_u64(rest)?;
+                let (total_recipients, _rest) = Self::unpack_u64(rest)?;
+                Self::StoreFinalAmounts {
+                    total_amount,
+                    total_recipients,
+                }
+            }
+            6 => {
                 let (amount, _rest) = Self::unpack_u64(rest)?;
                 Self::Payout { amount }
             }
-            6 => Self::Cancel,
-            7 => Self::Complete,
+            7 => Self::Cancel,
+            8 => Self::Complete,
             _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
@@ -221,23 +235,27 @@ impl EscrowInstruction {
                 buf.extend(manifest_hash.as_ref());
             }
             Self::StoreResults {
-                total_amount,
-                total_recipients,
                 final_results_url,
                 final_results_hash,
             } => {
                 buf.push(4);
-                buf.extend(&total_amount.to_le_bytes());
-                buf.extend(&total_recipients.to_le_bytes());
                 buf.extend(final_results_url.as_ref());
                 buf.extend(final_results_hash.as_ref());
             }
-            Self::Payout { amount } => {
+            Self::StoreFinalAmounts {
+                total_amount,
+                total_recipients,
+            } => {
                 buf.push(5);
+                buf.extend(&total_amount.to_le_bytes());
+                buf.extend(&total_recipients.to_le_bytes());
+            }
+            Self::Payout { amount } => {
+                buf.push(6);
                 buf.extend(&amount.to_le_bytes());
             }
-            Self::Cancel => buf.push(6),
-            Self::Complete => buf.push(7),
+            Self::Cancel => buf.push(7),
+            Self::Complete => buf.push(8),
         }
         buf
     }
@@ -386,18 +404,40 @@ pub fn store_results(
     escrow_program_id: &Pubkey,
     escrow: &Pubkey,
     trusted_handler: &Pubkey,
-    total_amount: u64,
-    total_recipients: u64,
     final_results_url: &DataUrl,
     final_results_hash: &DataHash,
 ) -> Result<Instruction, ProgramError> {
     let data = EscrowInstruction::StoreResults {
-        total_amount,
-        total_recipients,
         final_results_url: *final_results_url,
         final_results_hash: *final_results_hash,
     }
     .pack();
+
+    let accounts = vec![
+        AccountMeta::new(*escrow, false),
+        AccountMeta::new_readonly(*trusted_handler, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
+    ];
+
+    Ok(Instruction {
+        program_id: *escrow_program_id,
+        accounts,
+        data,
+    })
+}
+
+/// Creates `StoreFinalAmounts` instruction
+pub fn store_amounts(
+    escrow_program_id: &Pubkey,
+    escrow: &Pubkey,
+    trusted_handler: &Pubkey,
+    total_amount: u64,
+    total_recipients: u64,
+) -> Result<Instruction, ProgramError> {
+    let data = EscrowInstruction::StoreFinalAmounts {
+        total_amount,
+        total_recipients
+    }.pack();
 
     let accounts = vec![
         AccountMeta::new(*escrow, false),
@@ -525,17 +565,25 @@ mod test {
         assert_eq!(unpacked, check);
 
         let check = EscrowInstruction::StoreResults {
-            total_amount: 1000000,  // 0x00000000000F4240
-            total_recipients: 1000, // 0x00000000000003E8
             final_results_url: DataUrl::new_from_array([21; URL_LEN]),
             final_results_hash: DataHash::new_from_array([22; 20]),
         };
         let packed = check.pack();
         let mut expect: Vec<u8> = vec![4];
-        expect.extend(&[0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        expect.extend(&[0xE8, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         expect.extend(&[21; URL_LEN]);
         expect.extend(&[22; 20]);
+        assert_eq!(packed, expect);
+        let unpacked = EscrowInstruction::unpack(&expect).unwrap();
+        assert_eq!(unpacked, check);
+
+        let check = EscrowInstruction::StoreFinalAmounts {
+            total_amount: 1000000,  // 0x00000000000F4240
+            total_recipients: 1000, // 0x00000000000003E8
+        };
+        let packed = check.pack();
+        let mut expect: Vec<u8> = vec![5];
+        expect.extend(&[0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        expect.extend(&[0xE8, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         assert_eq!(packed, expect);
         let unpacked = EscrowInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);
@@ -544,21 +592,21 @@ mod test {
             amount: 1000000000000, // 0x000000E8D4A51000
         };
         let packed = check.pack();
-        let expect: Vec<u8> = vec![5, 0x00, 0x10, 0xA5, 0xD4, 0xE8, 0x00, 0x00, 0x00];
+        let expect: Vec<u8> = vec![6, 0x00, 0x10, 0xA5, 0xD4, 0xE8, 0x00, 0x00, 0x00];
         assert_eq!(packed, expect);
         let unpacked = EscrowInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);
 
         let check = EscrowInstruction::Cancel;
         let packed = check.pack();
-        let expect: Vec<u8> = vec![6];
+        let expect: Vec<u8> = vec![7];
         assert_eq!(packed, expect);
         let unpacked = EscrowInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);
 
         let check = EscrowInstruction::Complete;
         let packed = check.pack();
-        let expect: Vec<u8> = vec![7];
+        let expect: Vec<u8> = vec![8];
         assert_eq!(packed, expect);
         let unpacked = EscrowInstruction::unpack(&expect).unwrap();
         assert_eq!(unpacked, check);
