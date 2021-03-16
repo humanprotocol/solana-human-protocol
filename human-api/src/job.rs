@@ -4,6 +4,7 @@ use crate::Config;
 use hmt_escrow::{
     instruction::initialize as initialize_escrow,
     instruction::setup as setup_escrow,
+    instruction::store_results,
     processor::Processor as EscrowProcessor,
     state::{DataHash, DataUrl, Escrow},
 };
@@ -103,7 +104,6 @@ pub fn new_job(job_init_args: Json<InitJobArgs>, config: State<Config>) -> Json<
         .unwrap()
         .json()
         .unwrap();
-    // TODO: add check if response is ok and return Error
     let str_manifest_data = serde_json::to_string(&manifest_data).unwrap();
 
     let mut hasher = Sha1::new();
@@ -151,10 +151,10 @@ pub fn new_job(job_init_args: Json<InitJobArgs>, config: State<Config>) -> Json<
             &payer.pubkey(),
             &reputation_oracle_account_pub_key,
             &reputation_oracle_token_account.pubkey(),
-            manifest_data.oracle_stake,
+            (manifest_data.oracle_stake * 100.0) as u8,
             &recording_oracle_account_pub_key,
             &reputation_oracle_token_account.pubkey(),
-            manifest_data.oracle_stake,
+            (manifest_data.oracle_stake * 100.0) as u8,
             &manifest_url,
             &manifest_hash,
         )
@@ -234,10 +234,58 @@ pub fn complete_job(_address: String) -> JsonValue {
 #[post(
     "/storeIntermediateResults",
     format = "json",
-    data = "<_store_results_args>"
+    data = "<store_results_args>"
 )]
-pub fn store_job_intermediate_results(_store_results_args: Json<StoreResultsArgs>) -> JsonValue {
-    unimplemented!();
+pub fn store_job_intermediate_results(store_results_args: Json<StoreResultsArgs>, config: State<Config>) -> Json<StoreIntermediateResultsResponse> {
+    let payer = Keypair::from_base58_string(&store_results_args.gasPayerPrivate);
+    let escrow_pub_key = Pubkey::from_str(&store_results_args.address).unwrap();
+
+    let results_data: ResultsData = reqwest::blocking::get(&store_results_args.resultsUrl)
+        .unwrap()
+        .json()
+        .unwrap();
+    let str_results_data = serde_json::to_string(&results_data).unwrap();
+
+    let mut hasher = Sha1::new();
+    hasher.update(str_results_data);
+    let results_hash = DataHash::new_from_slice(&hasher.finalize()).unwrap();
+
+    let results_url = DataUrl::from_str(&store_results_args.resultsUrl).unwrap();
+
+    // Read escrow state to sure that it's initialized
+    let account_data = config
+        .rpc_client
+        .get_account_data(&escrow_pub_key)
+        .unwrap();
+    Escrow::unpack_from_slice(account_data.as_slice())
+        .unwrap();
+    
+    let mut transaction = Transaction::new_with_payer(
+        &[
+            // Store results instruction
+            store_results(
+                &hmt_escrow::id(),
+                &escrow_pub_key,
+                &payer.pubkey(),
+                &results_url,
+                &results_hash,
+            ).unwrap(),
+        ],
+        Some(&payer.pubkey()),
+    );
+
+    let (recent_blockhash, fee_calculator) = config.rpc_client.get_recent_blockhash().unwrap();
+    check_fee_payer_balance(&config, &payer.pubkey(), fee_calculator.calculate_fee(&transaction.message())).unwrap();
+    transaction.sign(&vec![&payer], recent_blockhash);
+
+    config
+        .rpc_client
+        .send_and_confirm_transaction(&transaction)
+        .unwrap();
+
+    Json(StoreIntermediateResultsResponse {
+        success: true,
+    })
 }
 
 /// Performs a payout to multiple Solana addresses

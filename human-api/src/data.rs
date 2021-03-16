@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize)]
@@ -16,11 +17,18 @@ pub struct Response {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct StoreIntermediateResultsResponse {
+    /// Response data
+    pub success: bool,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct FactoryJobs {
     /// Response data
     pub jobs: Vec<String>,
 }
 
+#[allow(non_snake_case)]
 #[derive(Serialize, Deserialize)]
 pub struct InitJobArgs {
     /// Gas payer pub key
@@ -35,6 +43,7 @@ pub struct InitJobArgs {
     pub manifestUrl: String,
 }
 
+#[allow(non_snake_case)]
 #[derive(Serialize, Deserialize)]
 pub struct StoreResultsArgs {
     /// Gas payer pub key
@@ -49,6 +58,7 @@ pub struct StoreResultsArgs {
     pub resultsUrl: String,
 }
 
+#[allow(non_snake_case)]
 #[derive(Serialize, Deserialize)]
 pub struct BulkPayoutArgs {
     /// Gas payer pub key
@@ -65,6 +75,7 @@ pub struct BulkPayoutArgs {
     pub payoutsUrl: String,
 }
 
+#[allow(non_snake_case)]
 #[derive(Serialize, Deserialize)]
 pub struct TrustedHandlersArgs {
     /// Gas payer pub key
@@ -77,13 +88,29 @@ pub struct TrustedHandlersArgs {
     pub handlers: Vec<String>,
 }
 
-// FIXME
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Manifest {
-    /// Oracle stake
-    pub oracle_stake: u8,
-    /// Reputation oracle address
-    pub reputation_oracle_addr: String,
-    /// Recording oracle address
+    pub expiration_date: u8,
+    pub instant_result_delivery_webhook: String,
+    pub job_mode: String,
+    pub job_total_tasks: u64,
+    pub minimum_trust_client: f64,
+    pub minimum_trust_server: f64,
+    pub oracle_stake: f64,
     pub recording_oracle_addr: String,
+    pub reputation_agent_addr: String,
+    pub reputation_oracle_addr: String,
+    pub request_type: String,
+    pub requester_accuracy_target: f64,
+    pub requester_question: HashMap<String, String>,
+    pub requester_question_example: String,
+    pub requester_restricted_answer_set: HashMap<String, HashMap<String, String>>,
+    pub task_bid_price: f64,
+    pub taskdata_uri: String,
+    pub unsafe_content: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ResultsData {
+    pub results: bool,
 }
