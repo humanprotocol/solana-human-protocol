@@ -30,8 +30,8 @@ pub struct Config {
     pub token_decimals: u8,
     pub rpc_client: RpcClient,
     pub human_protocol_program: String,
-    pub offset: usize,
-    pub duration: u64,
+    pub data_offset_to_begin_match: usize,
+    pub escrow_duration: u64,
 }
 
 pub type Error = Box<dyn std::error::Error>;
@@ -54,16 +54,16 @@ pub fn rocket() -> rocket::Rocket {
             let factory_version = rocket.config().get_int("factory_version").unwrap_or(1) as u8;
             let human_protocol_program =
                 String::from(rocket.config().get_str("human_protocol_program").unwrap());
-            let offset = rocket.config().get_int("offset").unwrap() as usize;
-            let duration = rocket.config().get_int("duration").unwrap() as u64;
+            let data_offset_to_begin_match = rocket.config().get_int("data_offset_to_begin_match").unwrap() as usize;
+            let escrow_duration = rocket.config().get_int("escrow_duration").unwrap() as u64;
             let token_decimals = rocket.config().get_int("token_decimals").unwrap() as u8;
             let config = Config {
                 factory_version,
                 token_decimals,
                 rpc_client,
                 human_protocol_program,
-                offset,
-                duration,
+                data_offset_to_begin_match,
+                escrow_duration,
             };
 
             Ok(rocket.manage(config))
@@ -142,8 +142,8 @@ mod test {
                     token_decimals: TOKEN_DECIMALS,
                     rpc_client: mocked_client.solana_client.unwrap(),
                     human_protocol_program: String::from(HUMAN_PROTOCOL_PROGRAM),
-                    offset: OFFSET,
-                    duration: DURATION,
+                    data_offset_to_begin_match: OFFSET,
+                    escrow_duration: DURATION,
                 };
 
                 Ok(rocket.manage(config))

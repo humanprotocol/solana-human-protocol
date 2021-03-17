@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use solana_program::pubkey::Pubkey;
 use std::collections::HashMap;
 
 #[allow(non_snake_case)]
@@ -17,7 +18,7 @@ pub struct Response {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct StoreIntermediateResultsResponse {
+pub struct BoolResponse {
     /// Response data
     pub success: bool,
 }
@@ -113,4 +114,9 @@ pub struct Manifest {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ResultsData {
     pub results: bool,
+}
+
+pub struct PayoutRecord {
+    pub recipient: Pubkey,
+    pub amount: f64,
 }

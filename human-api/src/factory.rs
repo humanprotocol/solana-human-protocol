@@ -21,7 +21,7 @@ pub fn get_factory(address: String, config: State<Config>) -> Json<FactoryJobs> 
     let human_protocol_program = Pubkey::from_str(&config.human_protocol_program).unwrap();
 
     let memcp = Memcmp {
-        offset: config.offset,
+        offset: config.data_offset_to_begin_match,
         bytes: MemcmpEncodedBytes::Binary(address),
         encoding: None,
     };

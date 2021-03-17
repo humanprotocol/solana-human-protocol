@@ -3,7 +3,9 @@ use crate::helpers::*;
 use crate::Config;
 use hmt_escrow::{
     instruction::initialize as initialize_escrow,
+    instruction::payout,
     instruction::setup as setup_escrow,
+    instruction::store_amounts,
     instruction::store_results,
     processor::Processor as EscrowProcessor,
     state::{DataHash, DataUrl, Escrow},
@@ -12,12 +14,13 @@ use rocket::State;
 use rocket_contrib::json::{Json, JsonValue};
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
-use solana_program::{program_pack::Pack, pubkey::Pubkey};
+use solana_program::{instruction::Instruction, program_pack::Pack, pubkey::Pubkey};
 use solana_sdk::{
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
 use spl_token::{state::Account as TokenAccount, state::Mint as TokenMint};
+use std::collections::HashMap;
 use std::str::FromStr;
 
 /// Creates a new job and returns the address
@@ -95,7 +98,7 @@ pub fn new_job(job_init_args: Json<InitJobArgs>, config: State<Config>) -> Json<
             &payer.pubkey(),
             &payer.pubkey(),
             &escrow_token_account.pubkey(),
-            config.duration,
+            config.escrow_duration,
         )
         .unwrap(),
     );
@@ -236,7 +239,10 @@ pub fn complete_job(_address: String) -> JsonValue {
     format = "json",
     data = "<store_results_args>"
 )]
-pub fn store_job_intermediate_results(store_results_args: Json<StoreResultsArgs>, config: State<Config>) -> Json<StoreIntermediateResultsResponse> {
+pub fn store_job_intermediate_results(
+    store_results_args: Json<StoreResultsArgs>,
+    config: State<Config>,
+) -> Json<BoolResponse> {
     let payer = Keypair::from_base58_string(&store_results_args.gasPayerPrivate);
     let escrow_pub_key = Pubkey::from_str(&store_results_args.address).unwrap();
 
@@ -253,13 +259,9 @@ pub fn store_job_intermediate_results(store_results_args: Json<StoreResultsArgs>
     let results_url = DataUrl::from_str(&store_results_args.resultsUrl).unwrap();
 
     // Read escrow state to sure that it's initialized
-    let account_data = config
-        .rpc_client
-        .get_account_data(&escrow_pub_key)
-        .unwrap();
-    Escrow::unpack_from_slice(account_data.as_slice())
-        .unwrap();
-    
+    let account_data = config.rpc_client.get_account_data(&escrow_pub_key).unwrap();
+    Escrow::unpack_from_slice(account_data.as_slice()).unwrap();
+
     let mut transaction = Transaction::new_with_payer(
         &[
             // Store results instruction
@@ -269,13 +271,19 @@ pub fn store_job_intermediate_results(store_results_args: Json<StoreResultsArgs>
                 &payer.pubkey(),
                 &results_url,
                 &results_hash,
-            ).unwrap(),
+            )
+            .unwrap(),
         ],
         Some(&payer.pubkey()),
     );
 
     let (recent_blockhash, fee_calculator) = config.rpc_client.get_recent_blockhash().unwrap();
-    check_fee_payer_balance(&config, &payer.pubkey(), fee_calculator.calculate_fee(&transaction.message())).unwrap();
+    check_fee_payer_balance(
+        &config,
+        &payer.pubkey(),
+        fee_calculator.calculate_fee(&transaction.message()),
+    )
+    .unwrap();
     transaction.sign(&vec![&payer], recent_blockhash);
 
     config
@@ -283,15 +291,117 @@ pub fn store_job_intermediate_results(store_results_args: Json<StoreResultsArgs>
         .send_and_confirm_transaction(&transaction)
         .unwrap();
 
-    Json(StoreIntermediateResultsResponse {
-        success: true,
-    })
+    Json(BoolResponse { success: true })
 }
 
 /// Performs a payout to multiple Solana addresses
-#[post("/bulkPayout", format = "json", data = "<_bulk_payout_args>")]
-pub fn bulk_payout(_bulk_payout_args: Json<BulkPayoutArgs>) -> JsonValue {
-    unimplemented!();
+#[post("/bulkPayout", format = "json", data = "<bulk_payout_args>")]
+pub fn bulk_payout(
+    bulk_payout_args: Json<BulkPayoutArgs>,
+    config: State<Config>,
+) -> Json<BoolResponse> {
+    let payer = Keypair::from_base58_string(&bulk_payout_args.gasPayerPrivate);
+    let escrow_pub_key = Pubkey::from_str(&bulk_payout_args.address).unwrap();
+    let escrow_account_data = config.rpc_client.get_account_data(&escrow_pub_key).unwrap();
+    let escrow_info: Escrow = Escrow::unpack_from_slice(escrow_account_data.as_slice()).unwrap();
+
+    let payouts_data: HashMap<String, String> =
+        reqwest::blocking::get(&bulk_payout_args.payoutsUrl)
+            .unwrap()
+            .json()
+            .unwrap();
+
+    let recipients: Vec<PayoutRecord> = payouts_data
+        .iter()
+        .map(|(pub_k, amount)| PayoutRecord {
+            recipient: Pubkey::from_str(&pub_k).unwrap(),
+            amount: amount.parse::<f64>().unwrap(),
+        })
+        .collect();
+
+    let total_amount: f64 = recipients.iter().map(|x| x.amount).sum();
+
+    // Check token mint to convert amount to u64
+    let token_mint_account_data = config
+        .rpc_client
+        .get_account_data(&escrow_info.token_mint)
+        .unwrap();
+    let mint_info: TokenMint =
+        TokenMint::unpack_from_slice(token_mint_account_data.as_slice()).unwrap();
+
+    let total_amount = spl_token::ui_amount_to_amount(total_amount, mint_info.decimals);
+
+    let mut instructions = vec![];
+    let mut signers = vec![];
+
+    instructions.push(
+        store_amounts(
+            &hmt_escrow::id(),
+            &escrow_pub_key,
+            &payer.pubkey(),
+            total_amount,
+            recipients.len() as u64,
+        )
+        .unwrap(),
+    );
+    signers.push(&payer);
+
+    let reputation_oracle_token_account = escrow_info.reputation_oracle_token_account.unwrap();
+    let recording_oracle_token_account = escrow_info.recording_oracle_token_account.unwrap();
+
+    // Check escrow token account balance
+    let account_data = config
+        .rpc_client
+        .get_account_data(&escrow_info.token_account)
+        .unwrap();
+    let token_account_info: TokenAccount =
+        TokenAccount::unpack_from_slice(account_data.as_slice()).unwrap();
+
+    if total_amount > token_account_info.amount {
+        unimplemented!();  // TODO: return error message
+    }
+    let authority =
+        EscrowProcessor::authority_id(&hmt_escrow::id(), &escrow_pub_key, escrow_info.bump_seed)
+            .unwrap();
+
+    let payout_instructions: Vec<Instruction> = recipients
+    .iter()
+    .map(|record| {
+        let instruction = payout(
+            &hmt_escrow::id(),
+            &escrow_pub_key,
+            &payer.pubkey(),
+            &escrow_info.token_account,
+            &authority,
+            &record.recipient,
+            &reputation_oracle_token_account,
+            &recording_oracle_token_account,
+            &spl_token::id(),
+            spl_token::ui_amount_to_amount(record.amount, mint_info.decimals),
+        )
+        .unwrap();
+        instruction
+    })
+    .collect();
+
+    instructions.extend(payout_instructions);
+
+    let mut transaction = Transaction::new_with_payer(&instructions, Some(&payer.pubkey()));
+    let (recent_blockhash, fee_calculator) = config.rpc_client.get_recent_blockhash().unwrap();
+    check_fee_payer_balance(
+        &config,
+        &payer.pubkey(),
+        fee_calculator.calculate_fee(&transaction.message()),
+    )
+    .unwrap();
+    transaction.sign(&signers, recent_blockhash);
+
+    config
+        .rpc_client
+        .send_and_confirm_transaction(&transaction)
+        .unwrap();
+
+    Json(BoolResponse { success: true })
 }
 
 /// Add trusted handlers that can freely transact with the contract

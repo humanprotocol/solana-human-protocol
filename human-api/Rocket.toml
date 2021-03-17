@@ -1,20 +1,20 @@
 [global]
 node_endpoint = "https://devnet.solana.com"
 human_protocol_program = "rK6j1hcHDTWerdrAS2w3BFifjHkPrRrnGYC7GRNwqKF"
-offset = 348
+data_offset_to_begin_match = 348
 token_decimals = 9
-duration = 3400
+escrow_duration = 3400
 
 [development]
 node_endpoint = "https://devnet.solana.com"
 human_protocol_program = "rK6j1hcHDTWerdrAS2w3BFifjHkPrRrnGYC7GRNwqKF"
-offset = 348
+data_offset_to_begin_match = 348
 token_decimals = 9
-duration = 3400
+escrow_duration = 3400
 
 [production]
 node_endpoint = "https://devnet.solana.com"
 human_protocol_program = "rK6j1hcHDTWerdrAS2w3BFifjHkPrRrnGYC7GRNwqKF"
-offset = 348
+data_offset_to_begin_match = 348
 token_decimals = 9
-duration = 3400
+escrow_duration = 3400
