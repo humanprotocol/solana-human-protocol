@@ -298,8 +298,6 @@ impl Processor {
     /// Processes `StoreResults` instruction.
     pub fn process_store_results(
         accounts: &[AccountInfo],
-        total_amount: u64,
-        total_recipients: u64,
         final_results_url: &DataUrl,
         final_results_hash: &DataHash,
     ) -> ProgramResult {
@@ -315,11 +313,36 @@ impl Processor {
             vec![EscrowState::Pending, EscrowState::Partial],
         )?;
 
-        // Save final amounts and results
-        escrow.total_amount = total_amount;
-        escrow.total_recipients = total_recipients;
+        // Save final results url and hash
         escrow.final_results_url = *final_results_url;
         escrow.final_results_hash = *final_results_hash;
+
+        Escrow::pack(escrow, &mut escrow_info.data.borrow_mut())?;
+
+        Ok(())
+    }
+
+    /// Processes `StoreFinalAmounts` instruction.
+    pub fn process_store_amounts(
+        accounts: &[AccountInfo],
+        total_amount: u64,
+        total_recipients: u64,
+    ) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+        let escrow_info = next_account_info(account_info_iter)?;
+        let trusted_handler_info = next_account_info(account_info_iter)?;
+        let clock = &Clock::from_account_info(next_account_info(account_info_iter)?)?;
+
+        let mut escrow = Self::get_escrow_with_state_check(
+            escrow_info,
+            clock,
+            trusted_handler_info,
+            vec![EscrowState::Pending, EscrowState::Partial],
+        )?;
+
+        // Save final results url and hash
+        escrow.total_amount = total_amount;
+        escrow.total_recipients = total_recipients;
 
         Escrow::pack(escrow, &mut escrow_info.data.borrow_mut())?;
 
@@ -552,18 +575,25 @@ impl Processor {
                 )
             }
             EscrowInstruction::StoreResults {
-                total_amount,
-                total_recipients,
                 final_results_url,
                 final_results_hash,
             } => {
                 info!("Instruction: Store Results");
                 Self::process_store_results(
                     accounts,
-                    total_amount,
-                    total_recipients,
                     &final_results_url,
                     &final_results_hash,
+                )
+            }
+            EscrowInstruction::StoreFinalAmounts {
+                total_amount,
+                total_recipients,
+            } => {
+                info!("Instruction: Store Amounts");
+                Self::process_store_amounts(
+                    accounts,
+                    total_amount,
+                    total_recipients,
                 )
             }
             EscrowInstruction::Payout { amount } => {

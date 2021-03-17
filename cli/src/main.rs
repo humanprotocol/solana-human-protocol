@@ -8,7 +8,7 @@ use hmt_escrow::{
     self,
     instruction::{
         cancel as cancel_escrow, complete as complete_escrow, factory_initialize,
-        initialize as initialize_escrow, payout, setup as setup_escrow, store_results,
+        initialize as initialize_escrow, payout, setup as setup_escrow, store_results, store_amounts,
     },
     processor::Processor as EscrowProcessor,
 };
@@ -472,8 +472,6 @@ fn command_setup(
 fn command_store_results(
     config: &Config,
     escrow: &Pubkey,
-    amount: f64,
-    recipients: u64,
     results_url: &str,
     results_hash: &Option<String>,
 ) -> CommandResult {
@@ -487,6 +485,43 @@ fn command_store_results(
         }
     };
 
+    // Read escrow state to sure that it's initialized
+    let account_data = config
+        .rpc_client
+        .get_account_data(escrow)
+        .or(Err("Cannot read escrow data"))?;
+    Escrow::unpack_from_slice(account_data.as_slice())
+        .map_err(|_| format!("{} is not a valid escrow address", escrow))?;
+
+    let mut transaction = Transaction::new_with_payer(
+        &[
+            // Store results instruction
+            store_results(
+                &hmt_escrow::id(),
+                &escrow,
+                &config.owner.pubkey(),
+                &results_url,
+                &results_hash,
+            )?,
+        ],
+        Some(&config.fee_payer.pubkey()),
+    );
+
+    let (recent_blockhash, fee_calculator) = config.rpc_client.get_recent_blockhash()?;
+    check_fee_payer_balance(config, fee_calculator.calculate_fee(&transaction.message()))?;
+    let mut signers = vec![config.fee_payer.as_ref(), config.owner.as_ref()];
+    unique_signers!(signers);
+    transaction.sign(&signers, recent_blockhash);
+    Ok(Some(transaction))
+}
+
+/// Issues store amounts command
+fn command_store_amounts(
+    config: &Config,
+    escrow: &Pubkey,
+    amount: f64,
+    recipients: u64,
+) -> CommandResult {
     // Read escrow state
     let account_data = config
         .rpc_client
@@ -508,14 +543,12 @@ fn command_store_results(
     let mut transaction = Transaction::new_with_payer(
         &[
             // Store results instruction
-            store_results(
+            store_amounts(
                 &hmt_escrow::id(),
                 &escrow,
                 &config.owner.pubkey(),
                 amount,
                 recipients,
-                &results_url,
-                &results_hash,
             )?,
         ],
         Some(&config.fee_payer.pubkey()),
@@ -946,6 +979,33 @@ fn main() {
                     .help("Escrow address"),
             )
             .arg(
+                Arg::with_name("results_url")
+                    .long("results-url")
+                    .validator(is_url)
+                    .value_name("URL")
+                    .takes_value(true)
+                    .help("Final results URL [default: empty string]"),
+            )
+            .arg(
+                Arg::with_name("results_hash")
+                    .long("results-hash")
+                    .validator(is_hex)
+                    .value_name("HEX")
+                    .takes_value(true)
+                    .help("20-byte results SHA1 hash in hex format [default: 0-byte hash]"),
+            )
+        )
+        .subcommand(SubCommand::with_name("store-amounts").about("Stores amounts in the escrow")
+            .arg(
+                Arg::with_name("escrow")
+                    .validator(is_pubkey)
+                    .index(1)
+                    .value_name("ESCROW_ADDRESS")
+                    .takes_value(true)
+                    .required(true)
+                    .help("Escrow address"),
+            )
+            .arg(
                 Arg::with_name("amount")
                     .long("amount")
                     .validator(is_amount)
@@ -962,22 +1022,6 @@ fn main() {
                     .takes_value(true)
                     .required(true)
                     .help("Number of recipients to receive tokens from the escrow."),
-            )
-            .arg(
-                Arg::with_name("results_url")
-                    .long("results-url")
-                    .validator(is_url)
-                    .value_name("URL")
-                    .takes_value(true)
-                    .help("Final results URL [default: empty string]"),
-            )
-            .arg(
-                Arg::with_name("results_hash")
-                    .long("results-hash")
-                    .validator(is_hex)
-                    .value_name("HEX")
-                    .takes_value(true)
-                    .help("20-byte results SHA1 hash in hex format [default: 0-byte hash]"),
             )
         )
         .subcommand(SubCommand::with_name("payout").about("Pays tokens from the escrow account")
@@ -1122,17 +1166,24 @@ fn main() {
         }
         ("store-results", Some(arg_matches)) => {
             let escrow: Pubkey = pubkey_of(arg_matches, "escrow").unwrap();
-            let amount = value_t_or_exit!(arg_matches, "amount", f64);
-            let recipients = value_t_or_exit!(arg_matches, "recipients", u64);
             let results_url: String = value_of(arg_matches, "results_url").unwrap_or_default();
             let results_hash: Option<String> = value_of(arg_matches, "results_hash");
             command_store_results(
                 &config,
                 &escrow,
-                amount,
-                recipients,
                 &results_url,
                 &results_hash,
+            )
+        }
+        ("store-amounts", Some(arg_matches)) => {
+            let escrow: Pubkey = pubkey_of(arg_matches, "escrow").unwrap();
+            let amount = value_t_or_exit!(arg_matches, "amount", f64);
+            let recipients = value_t_or_exit!(arg_matches, "recipients", u64);
+            command_store_amounts(
+                &config,
+                &escrow,
+                amount,
+                recipients,
             )
         }
         ("payout", Some(arg_matches)) => {

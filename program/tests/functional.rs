@@ -213,8 +213,6 @@ async fn store_results(
     recent_blockhash: &Hash,
     escrow_account: &Keypair,
     trust_handler: &Keypair,
-    total_amount: &f64,
-    total_recipients: &u64,
     final_results_url: &DataUrl,
     final_results_hash: &DataHash,
 ) {
@@ -223,10 +221,32 @@ async fn store_results(
             &id(),
             &escrow_account.pubkey(),
             &trust_handler.pubkey(),
-            spl_token::ui_amount_to_amount(*total_amount, DECIMALS),
-            *total_recipients,
             &final_results_url,
             final_results_hash,
+        )
+        .unwrap()],
+        Some(&payer.pubkey()),
+    );
+    transaction.sign(&[payer, trust_handler], *recent_blockhash);
+    banks_client.process_transaction(transaction).await.unwrap();
+}
+
+async fn store_final_amounts(
+    banks_client: &mut BanksClient,
+    payer: &Keypair,
+    recent_blockhash: &Hash,
+    escrow_account: &Keypair,
+    trust_handler: &Keypair,
+    total_amount: &f64,
+    total_recipients: &u64,
+) {
+    let mut transaction = Transaction::new_with_payer(
+        &[instruction::store_amounts(
+            &id(),
+            &escrow_account.pubkey(),
+            &trust_handler.pubkey(),
+            spl_token::ui_amount_to_amount(*total_amount, DECIMALS),
+            *total_recipients,
         )
         .unwrap()],
         Some(&payer.pubkey()),
@@ -543,12 +563,27 @@ impl EscrowAccount {
             &recent_blockhash,
             &self.escrow,
             &self.launcher,
-            &self.total_amount,
-            &self.total_recipients,
             &self.final_results_url,
             &self.final_results_hash,
         )
         .await;
+    }
+
+    pub async fn store_amounts(
+        &self,
+        mut banks_client: &mut BanksClient,
+        payer: &Keypair,
+        recent_blockhash: &Hash,
+    ) {
+        store_final_amounts(
+            &mut banks_client,
+            &payer,
+            &recent_blockhash,
+            &self.escrow,
+            &self.launcher,
+            &self.total_amount,
+            &self.total_recipients,
+        ).await;
     }
 
     pub async fn payout_escrow(
@@ -748,15 +783,37 @@ async fn test_hmt_escrow_store_results() {
 
     let store_check = |escrow: state::Escrow| {
         assert_eq!(escrow.state, state::EscrowState::Pending);
+        assert_eq!(escrow.manifest_url, escrow_account.manifest_url);
+        assert_eq!(escrow.manifest_hash, escrow_account.manifest_hash);
+        assert_eq!(escrow.final_results_url, escrow_account.final_results_url);
+        assert_eq!(escrow.final_results_hash, escrow_account.final_results_hash);
+    };
+
+    check_escrow_account_info(store_check, &escrow_account, &mut banks_client).await;
+}
+
+#[tokio::test]
+async fn test_hmt_escrow_store_amounts() {
+    let (mut banks_client, payer, recent_blockhash) = program_test().start().await;
+    let escrow_account = EscrowAccount::new();
+    escrow_account
+        .initialize_escrow(&mut banks_client, &payer, &recent_blockhash)
+        .await;
+
+    escrow_account
+        .setup_escrow(&mut banks_client, &payer, &recent_blockhash)
+        .await;
+    escrow_account
+        .store_amounts(&mut banks_client, &payer, &recent_blockhash)
+        .await;
+
+    let store_check = |escrow: state::Escrow| {
+        assert_eq!(escrow.state, state::EscrowState::Pending);
         assert_eq!(
             escrow.total_amount,
             spl_token::ui_amount_to_amount(escrow_account.total_amount, DECIMALS)
         );
         assert_eq!(escrow.total_recipients, escrow_account.total_recipients);
-        assert_eq!(escrow.manifest_url, escrow_account.manifest_url);
-        assert_eq!(escrow.manifest_hash, escrow_account.manifest_hash);
-        assert_eq!(escrow.final_results_url, escrow_account.final_results_url);
-        assert_eq!(escrow.final_results_hash, escrow_account.final_results_hash);
     };
 
     check_escrow_account_info(store_check, &escrow_account, &mut banks_client).await;
@@ -789,6 +846,7 @@ async fn test_hmt_escrow_payout() {
     escrow_account
         .store_results(&mut banks_client, &payer, &recent_blockhash)
         .await;
+    escrow_account.store_amounts(&mut banks_client, &payer, &recent_blockhash).await;
 
     let escrow_token_for_payout = 5000.0;
     let escrow_token_for_payout_to_mint =
@@ -898,6 +956,7 @@ async fn test_hmt_escrow_cancel() {
     escrow_account
         .store_results(&mut banks_client, &payer, &recent_blockhash)
         .await;
+    escrow_account.store_amounts(&mut banks_client, &payer, &recent_blockhash).await;
 
     let escrow_token_for_payout = 5000.0;
     let escrow_token_for_payout_to_mint =
@@ -961,6 +1020,7 @@ async fn test_hmt_escrow_complete() {
     escrow_account
         .store_results(&mut banks_client, &payer, &recent_blockhash)
         .await;
+    escrow_account.store_amounts(&mut banks_client, &payer, &recent_blockhash).await;
 
     let escrow_token_for_payout = 5000.0;
 
