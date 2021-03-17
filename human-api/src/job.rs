@@ -7,6 +7,8 @@ use hmt_escrow::{
     instruction::setup as setup_escrow,
     instruction::store_amounts,
     instruction::store_results,
+    instruction::cancel as cancel_escrow,
+    instruction::complete as complete_escrow,
     processor::Processor as EscrowProcessor,
     state::{DataHash, DataUrl, Escrow},
 };
@@ -184,52 +186,183 @@ pub fn new_job(job_init_args: Json<InitJobArgs>, config: State<Config>) -> Json<
     })
 }
 
-/// Receive the address of the launcher of a given job address
-#[get("/launcher?<_address>")]
-pub fn get_job_launcher(_address: String) -> JsonValue {
-    unimplemented!();
+/// Retrieve the address of the launcher of a given job address
+#[get("/launcher?<address>")]
+pub fn get_job_launcher(address: String, config: State<Config>) -> Json<Response> {
+    let escrow_pub_key = Pubkey::from_str(&address).unwrap();
+
+    let account_data = config.rpc_client.get_account_data(&escrow_pub_key).unwrap();
+    let escrow_info = Escrow::unpack_from_slice(account_data.as_slice()).unwrap();
+
+    Json(Response {
+        data: escrow_info.launcher.to_string(),
+    })
 }
 
-/// Receive the status of a given job address
-#[get("/status?<_address>")]
-pub fn get_job_status(_address: String) -> JsonValue {
-    unimplemented!();
+/// Retrieve the status of a given job address
+#[get("/status?<address>")]
+pub fn get_job_status(address: String, config: State<Config>) -> Json<StatusResponse> {
+    let escrow_pub_key = Pubkey::from_str(&address).unwrap();
+
+    let account_data = config.rpc_client.get_account_data(&escrow_pub_key).unwrap();
+    let escrow_info = Escrow::unpack_from_slice(account_data.as_slice()).unwrap();
+
+    Json(StatusResponse {
+        status: format!("{:?}", escrow_info.state),
+    })
 }
 
-/// Receive the Manifest URL of a given job address
-#[get("/manifestUrl?<_address>")]
-pub fn get_job_manifest_url(_address: String) -> JsonValue {
-    unimplemented!();
+/// Retrieve the Manifest URL of a given job address
+#[get("/manifestUrl?<address>")]
+pub fn get_job_manifest_url(address: String, config: State<Config>) -> Json<Response> {
+    let escrow_pub_key = Pubkey::from_str(&address).unwrap();
+
+    let account_data = config.rpc_client.get_account_data(&escrow_pub_key).unwrap();
+    let escrow_info = Escrow::unpack_from_slice(account_data.as_slice()).unwrap();
+
+    Json(Response {
+        data: escrow_info.manifest_url.to_string(),
+    })
 }
 
-/// Receive the Manifest Hash of a given job address
-#[get("/manifestHash?<_address>")]
-pub fn get_job_manifest_hash(_address: String) -> JsonValue {
-    unimplemented!();
+/// Retrieve the Manifest Hash of a given job address
+#[get("/manifestHash?<address>")]
+pub fn get_job_manifest_hash(address: String, config: State<Config>) -> Json<Response> {
+    let escrow_pub_key = Pubkey::from_str(&address).unwrap();
+
+    let account_data = config.rpc_client.get_account_data(&escrow_pub_key).unwrap();
+    let escrow_info = Escrow::unpack_from_slice(account_data.as_slice()).unwrap();
+
+    Json(Response {
+        data: escrow_info.manifest_hash.to_string(),
+    })
 }
 
 /// Balance in HMT of a given job address
-#[get("/balance?<_address>")]
-pub fn get_job_balance(_address: String) -> JsonValue {
-    unimplemented!();
+#[get("/balance?<address>")]
+pub fn get_job_balance(address: String, config: State<Config>) -> Json<BalanceResponse> {
+    let escrow_pub_key = Pubkey::from_str(&address).unwrap();
+
+    let account_data = config.rpc_client.get_account_data(&escrow_pub_key).unwrap();
+    let escrow_info = Escrow::unpack_from_slice(account_data.as_slice()).unwrap();
+
+    let account_data = config.rpc_client.get_account_data(&escrow_info.token_account).unwrap();
+    let escrow_token_account_info = TokenAccount::unpack_from_slice(account_data.as_slice()).unwrap();
+
+    Json(BalanceResponse {
+        data: escrow_token_account_info.amount,
+    })
 }
 
 /// Abort a given job
-#[get("/abort?<_address>")]
-pub fn abort_job(_address: String) -> JsonValue {
-    unimplemented!();
+#[allow(non_snake_case)]
+#[get("/abort?<address>&<gasPayerPrivate>")]
+pub fn abort_job(address: String, gasPayerPrivate: String, config: State<Config>) -> Json<BoolResponse> {
+    let escrow_pub_key = Pubkey::from_str(&address).unwrap();
+    let payer = Keypair::from_base58_string(&gasPayerPrivate);
+
+    let account_data = config.rpc_client.get_account_data(&escrow_pub_key).unwrap();
+    let escrow_info = Escrow::unpack_from_slice(account_data.as_slice()).unwrap();
+
+    let account_data = config.rpc_client.get_account_data(&escrow_info.token_account).unwrap();
+    let escrow_token_account_info = TokenAccount::unpack_from_slice(account_data.as_slice()).unwrap();
+
+    if escrow_token_account_info.amount != 0 {
+        let authority =
+            EscrowProcessor::authority_id(&hmt_escrow::id(), &escrow_pub_key, escrow_info.bump_seed).unwrap();
+        let mut transaction = Transaction::new_with_payer(
+            &[cancel_escrow(
+                &hmt_escrow::id(),
+                &escrow_pub_key,
+                &payer.pubkey(),
+                &escrow_info.token_account,
+                &authority,
+                &escrow_info.canceler_token_account,
+                &spl_token::id(),
+            ).unwrap()],
+            Some(&payer.pubkey()),
+        );
+        let (recent_blockhash, fee_calculator) = config.rpc_client.get_recent_blockhash().unwrap();
+        check_fee_payer_balance(&config, &payer.pubkey(), fee_calculator.calculate_fee(&transaction.message())).unwrap();
+        transaction.sign(&vec![&payer], recent_blockhash);
+        config
+            .rpc_client
+            .send_and_confirm_transaction(&transaction)
+            .unwrap();
+    }
+
+    Json(BoolResponse {
+        success: true,
+    })
 }
 
 /// Cancel a given job
-#[get("/cancel?<_address>")]
-pub fn cancel_job(_address: String) -> JsonValue {
-    unimplemented!();
+#[allow(non_snake_case)]
+#[get("/cancel?<address>&<gasPayerPrivate>")]
+pub fn cancel_job(address: String, gasPayerPrivate: String, config: State<Config>) -> Json<BoolResponse> {
+    let escrow_pub_key = Pubkey::from_str(&address).unwrap();
+    let payer = Keypair::from_base58_string(&gasPayerPrivate);
+
+    let account_data = config.rpc_client.get_account_data(&escrow_pub_key).unwrap();
+    let escrow_info = Escrow::unpack_from_slice(account_data.as_slice()).unwrap();
+
+    let authority =
+        EscrowProcessor::authority_id(&hmt_escrow::id(), &escrow_pub_key, escrow_info.bump_seed).unwrap();
+    let mut transaction = Transaction::new_with_payer(
+        &[cancel_escrow(
+            &hmt_escrow::id(),
+            &escrow_pub_key,
+            &payer.pubkey(),
+            &escrow_info.token_account,
+            &authority,
+            &escrow_info.canceler_token_account,
+            &spl_token::id(),
+        ).unwrap()],
+        Some(&payer.pubkey()),
+    );
+    let (recent_blockhash, fee_calculator) = config.rpc_client.get_recent_blockhash().unwrap();
+    check_fee_payer_balance(&config, &payer.pubkey(), fee_calculator.calculate_fee(&transaction.message())).unwrap();
+    transaction.sign(&vec![&payer], recent_blockhash);
+    config
+        .rpc_client
+        .send_and_confirm_transaction(&transaction)
+        .unwrap();
+
+    Json(BoolResponse {
+        success: true,
+    })
 }
 
 /// Complete a given job
-#[post("/complete?<_address>")]
-pub fn complete_job(_address: String) -> JsonValue {
-    unimplemented!();
+#[allow(non_snake_case)]
+#[get("/complete?<address>&<gasPayerPrivate>")]
+pub fn complete_job(address: String, gasPayerPrivate: String, config: State<Config>) -> Json<BoolResponse> {
+    let escrow_pub_key = Pubkey::from_str(&address).unwrap();
+    let payer = Keypair::from_base58_string(&gasPayerPrivate);
+
+    let account_data = config.rpc_client.get_account_data(&escrow_pub_key).unwrap();
+    let escrow_info = Escrow::unpack_from_slice(account_data.as_slice()).unwrap();
+
+    let mut transaction = Transaction::new_with_payer(
+        &[complete_escrow(
+            &hmt_escrow::id(),
+            &escrow_pub_key,
+            &payer.pubkey(),
+        ).unwrap()],
+        Some(&payer.pubkey()),
+    );
+
+    let (recent_blockhash, fee_calculator) = config.rpc_client.get_recent_blockhash().unwrap();
+    check_fee_payer_balance(&config, &payer.pubkey(), fee_calculator.calculate_fee(&transaction.message())).unwrap();
+    transaction.sign(&vec![&payer], recent_blockhash);
+    config
+        .rpc_client
+        .send_and_confirm_transaction(&transaction)
+        .unwrap();
+
+    Json(BoolResponse {
+        success: true,
+    })
 }
 
 /// Store job results
@@ -413,13 +546,20 @@ pub fn add_trusted_handlers(_trusted_handlers_args: Json<TrustedHandlersArgs>) -
 }
 
 /// Retrieve the intermediate results stored by the Recording Oracle
-#[post("/intermediateResults?<_address>")]
+#[get("/intermediateResults?<_address>")]
 pub fn get_intermediate_results(_address: String) -> JsonValue {
     unimplemented!();
 }
 
 /// Retrieve the final results
-#[post("/finalResults?<_address>")]
-pub fn get_final_results(_address: String) -> JsonValue {
-    unimplemented!();
+#[get("/finalResults?<address>")]
+pub fn get_final_results(address: String, config: State<Config>) -> Json<Response> {
+    let escrow_pub_key = Pubkey::from_str(&address).unwrap();
+
+    let account_data = config.rpc_client.get_account_data(&escrow_pub_key).unwrap();
+    let escrow_info = Escrow::unpack_from_slice(account_data.as_slice()).unwrap();
+
+    Json(Response {
+        data: escrow_info.final_results_url.to_string(),
+    })
 }

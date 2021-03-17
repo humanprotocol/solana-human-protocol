@@ -18,6 +18,18 @@ pub struct Response {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct StatusResponse {
+    /// Escrow status
+    pub status: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct BalanceResponse {
+    /// Escrow token balance
+    pub data: u64,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct BoolResponse {
     /// Response data
     pub success: bool,
