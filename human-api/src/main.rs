@@ -54,7 +54,10 @@ pub fn rocket() -> rocket::Rocket {
             let factory_version = rocket.config().get_int("factory_version").unwrap_or(1) as u8;
             let human_protocol_program =
                 String::from(rocket.config().get_str("human_protocol_program").unwrap());
-            let data_offset_to_begin_match = rocket.config().get_int("data_offset_to_begin_match").unwrap() as usize;
+            let data_offset_to_begin_match = rocket
+                .config()
+                .get_int("data_offset_to_begin_match")
+                .unwrap() as usize;
             let escrow_duration = rocket.config().get_int("escrow_duration").unwrap() as u64;
             let token_decimals = rocket.config().get_int("token_decimals").unwrap() as u8;
             let config = Config {

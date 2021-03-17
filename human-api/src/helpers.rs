@@ -5,7 +5,6 @@ use solana_sdk::{
     native_token::*,
     signature::{Keypair, Signer},
     system_instruction,
-    transaction::Transaction,
 };
 use spl_token::{
     instruction::initialize_account, instruction::initialize_mint, state::Account as TokenAccount,

@@ -12,7 +12,6 @@ use hmt_escrow::{
 };
 use rocket::State;
 use rocket_contrib::json::{Json, JsonValue};
-use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use solana_program::{instruction::Instruction, program_pack::Pack, pubkey::Pubkey};
 use solana_sdk::{
@@ -358,31 +357,30 @@ pub fn bulk_payout(
         TokenAccount::unpack_from_slice(account_data.as_slice()).unwrap();
 
     if total_amount > token_account_info.amount {
-        unimplemented!();  // TODO: return error message
+        unimplemented!(); // TODO: return error message
     }
     let authority =
         EscrowProcessor::authority_id(&hmt_escrow::id(), &escrow_pub_key, escrow_info.bump_seed)
             .unwrap();
 
     let payout_instructions: Vec<Instruction> = recipients
-    .iter()
-    .map(|record| {
-        let instruction = payout(
-            &hmt_escrow::id(),
-            &escrow_pub_key,
-            &payer.pubkey(),
-            &escrow_info.token_account,
-            &authority,
-            &record.recipient,
-            &reputation_oracle_token_account,
-            &recording_oracle_token_account,
-            &spl_token::id(),
-            spl_token::ui_amount_to_amount(record.amount, mint_info.decimals),
-        )
-        .unwrap();
-        instruction
-    })
-    .collect();
+        .iter()
+        .map(|record| {
+            payout(
+                &hmt_escrow::id(),
+                &escrow_pub_key,
+                &payer.pubkey(),
+                &escrow_info.token_account,
+                &authority,
+                &record.recipient,
+                &reputation_oracle_token_account,
+                &recording_oracle_token_account,
+                &spl_token::id(),
+                spl_token::ui_amount_to_amount(record.amount, mint_info.decimals),
+            )
+            .unwrap()
+        })
+        .collect();
 
     instructions.extend(payout_instructions);
 
