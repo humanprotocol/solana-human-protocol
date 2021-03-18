@@ -8,9 +8,9 @@ pub mod factory;
 pub mod helpers;
 pub mod job;
 pub mod manifest;
+pub mod responses;
 
 pub use crate::factory::*;
-// pub use crate::helpers::*;
 pub use crate::job::*;
 pub use crate::manifest::*;
 
@@ -72,7 +72,23 @@ pub fn rocket() -> rocket::Rocket {
             Ok(rocket.manage(config))
         }))
         .mount("/", routes![get_factory, new_factory])
-        .mount("/job", routes![new_job])
+        .mount(
+            "/job",
+            routes![
+                new_job,
+                get_job_launcher,
+                get_job_status,
+                get_job_manifest_url,
+                get_job_manifest_hash,
+                get_job_balance,
+                abort_job,
+                cancel_job,
+                complete_job,
+                store_job_intermediate_results,
+                bulk_payout,
+                get_final_results
+            ],
+        )
         .mount("/manifest", routes![validate_manifest])
         .mount("/", routes![ping])
 }
@@ -93,7 +109,6 @@ mod test {
     use solana_client::rpc_request::RpcRequest;
     use solana_client::rpc_response::RpcKeyedAccount;
     use solana_sdk::{account::Account, pubkey::Pubkey};
-    use std::collections::HashMap;
 
     pub const TEST_ENDPOINT: &str = "TestUrl";
     pub const FACTORY_VERSION: u8 = 1;
@@ -102,19 +117,13 @@ mod test {
     pub const OFFSET: usize = 348;
     pub const DURATION: u64 = 3400;
 
+    #[derive(Default)]
     pub struct MockedRpcClient {
         solana_client: Option<RpcClient>,
         mocks: Mocks,
     }
 
     impl MockedRpcClient {
-        pub fn new() -> Self {
-            Self {
-                solana_client: None,
-                mocks: HashMap::new(),
-            }
-        }
-
         pub fn create_rpc_client(&mut self) {
             self.solana_client = Some(RpcClient::new_mock_with_mocks(
                 String::from(TEST_ENDPOINT),
@@ -159,7 +168,7 @@ mod test {
 
     #[test]
     fn test_get_factory_addresses() {
-        let mut rpc_client = MockedRpcClient::new();
+        let mut rpc_client = MockedRpcClient::default();
         let response_pub_key = rpc_client.mock_get_program_addresses_with_filter();
         rpc_client.create_rpc_client();
 
