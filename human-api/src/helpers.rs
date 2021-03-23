@@ -1,5 +1,7 @@
+use crate::responses::*;
 use crate::*;
 use hmt_escrow::state::Escrow;
+use rocket_contrib::json::Json;
 use solana_program::{instruction::Instruction, program_pack::Pack, pubkey::Pubkey};
 use solana_sdk::{
     native_token::*,
@@ -36,11 +38,15 @@ pub fn create_mint(
     mint_account: &Keypair,
     owner: &Pubkey,
     decimals: u8,
-) -> Vec<Instruction> {
+) -> Result<Vec<Instruction>, ErrorResponse> {
     let mint_account_balance = config
         .rpc_client
         .get_minimum_balance_for_rent_exemption(TokenMint::LEN)
-        .unwrap();
+        .map_err(|e| {
+            ErrorResponse::BadGatewayErrorResponse(Json(ErrorMessage {
+                error: e.to_string(),
+            }))
+        })?;
 
     let instructions = vec![
         // Account for token mint
@@ -59,10 +65,14 @@ pub fn create_mint(
             None,
             decimals,
         )
-        .unwrap(),
+        .map_err(|e| {
+            ErrorResponse::ServerErrorResponse(Json(ErrorMessage {
+                error: e.to_string(),
+            }))
+        })?,
     ];
 
-    instructions
+    Ok(instructions)
 }
 
 pub fn create_token_account(
@@ -71,11 +81,15 @@ pub fn create_token_account(
     token_account: &Keypair,
     token_mint: &Pubkey,
     owner: &Pubkey,
-) -> Vec<Instruction> {
+) -> Result<Vec<Instruction>, ErrorResponse> {
     let token_account_balance = config
         .rpc_client
         .get_minimum_balance_for_rent_exemption(TokenAccount::LEN)
-        .unwrap();
+        .map_err(|e| {
+            ErrorResponse::BadGatewayErrorResponse(Json(ErrorMessage {
+                error: e.to_string(),
+            }))
+        })?;
 
     let instructions = vec![
         // Create system account first
@@ -87,21 +101,31 @@ pub fn create_token_account(
             &spl_token::id(),
         ),
         // Initialize token account
-        initialize_account(&spl_token::id(), &token_account.pubkey(), token_mint, owner).unwrap(),
+        initialize_account(&spl_token::id(), &token_account.pubkey(), token_mint, owner).map_err(
+            |e| {
+                ErrorResponse::ServerErrorResponse(Json(ErrorMessage {
+                    error: e.to_string(),
+                }))
+            },
+        )?,
     ];
 
-    instructions
+    Ok(instructions)
 }
 
 pub fn create_escrow_account(
     config: &Config,
     payer: &Keypair,
     escrow_account: &Keypair,
-) -> Vec<Instruction> {
+) -> Result<Vec<Instruction>, ErrorResponse> {
     let escrow_account_balance = config
         .rpc_client
         .get_minimum_balance_for_rent_exemption(Escrow::LEN)
-        .unwrap();
+        .map_err(|e| {
+            ErrorResponse::BadGatewayErrorResponse(Json(ErrorMessage {
+                error: e.to_string(),
+            }))
+        })?;
 
     let instruction = vec![
         // Create system account for Escrow
@@ -114,5 +138,5 @@ pub fn create_escrow_account(
         ),
     ];
 
-    instruction
+    Ok(instruction)
 }

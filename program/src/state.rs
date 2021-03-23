@@ -9,7 +9,7 @@ use solana_program::{
     program_pack::{IsInitialized, Pack, Sealed},
     pubkey::Pubkey,
 };
-use std::{fmt, mem, str::FromStr};
+use std::{fmt, mem, str::FromStr, string::ToString};
 
 /// Size for the URL field
 pub const URL_LEN: usize = 256;
@@ -99,6 +99,12 @@ impl DataHash {
     }
 }
 
+impl ToString for DataHash {
+    fn to_string(&self) -> String {
+        String::from_utf8(self.0.to_vec()).unwrap()
+    }
+}
+
 /// Stores data URL
 #[repr(transparent)]
 #[derive(Clone, Copy)]
@@ -141,6 +147,12 @@ impl FromStr for DataUrl {
         let mut result: Self = Default::default();
         result.0[..length].copy_from_slice(bytes);
         Ok(result)
+    }
+}
+
+impl ToString for DataUrl {
+    fn to_string(&self) -> String {
+        String::from_utf8(self.0.to_vec()).unwrap()
     }
 }
 

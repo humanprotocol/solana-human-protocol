@@ -8,13 +8,14 @@ use hmt_escrow::{
     self,
     instruction::{
         cancel as cancel_escrow, complete as complete_escrow, factory_initialize,
-        initialize as initialize_escrow, payout, setup as setup_escrow, store_results, store_amounts,
+        initialize as initialize_escrow, payout, setup as setup_escrow, store_amounts,
+        store_results,
     },
     processor::Processor as EscrowProcessor,
 };
 use solana_clap_utils::{
     input_parsers::{pubkey_of, value_of},
-    input_validators::{is_amount, is_keypair, is_parsable, is_pubkey, is_url},
+    input_validators::{is_keypair, is_parsable, is_pubkey, is_url},
     keypair::signer_from_path,
 };
 use solana_client::rpc_client::RpcClient;
@@ -515,53 +516,6 @@ fn command_store_results(
     Ok(Some(transaction))
 }
 
-/// Issues store amounts command
-fn command_store_amounts(
-    config: &Config,
-    escrow: &Pubkey,
-    amount: f64,
-    recipients: u64,
-) -> CommandResult {
-    // Read escrow state
-    let account_data = config
-        .rpc_client
-        .get_account_data(escrow)
-        .or(Err("Cannot read escrow data"))?;
-    let escrow_info: Escrow = Escrow::unpack_from_slice(account_data.as_slice())
-        .map_err(|_| format!("{} is not a valid escrow address", escrow))?;
-
-    // Check token mint to convert amount to u64
-    let account_data = config
-        .rpc_client
-        .get_account_data(&escrow_info.token_mint)
-        .or(Err("Cannot read escrow mint data"))?;
-    let mint_info: TokenMint = TokenMint::unpack_from_slice(account_data.as_slice())
-        .map_err(|_| format!("{} is not a valid mint address", escrow_info.token_mint))?;
-
-    let amount = spl_token::ui_amount_to_amount(amount, mint_info.decimals);
-
-    let mut transaction = Transaction::new_with_payer(
-        &[
-            // Store results instruction
-            store_amounts(
-                &hmt_escrow::id(),
-                &escrow,
-                &config.owner.pubkey(),
-                amount,
-                recipients,
-            )?,
-        ],
-        Some(&config.fee_payer.pubkey()),
-    );
-
-    let (recent_blockhash, fee_calculator) = config.rpc_client.get_recent_blockhash()?;
-    check_fee_payer_balance(config, fee_calculator.calculate_fee(&transaction.message()))?;
-    let mut signers = vec![config.fee_payer.as_ref(), config.owner.as_ref()];
-    unique_signers!(signers);
-    transaction.sign(&signers, recent_blockhash);
-    Ok(Some(transaction))
-}
-
 #[derive(Debug)]
 struct PayoutRecord {
     recipient: Pubkey,
@@ -621,6 +575,19 @@ fn command_payout(config: &Config, escrow: &Pubkey, file_name: &str) -> CommandR
         .map_err(|_| format!("{} is not a valid mint address", escrow_info.token_mint))?;
     let total_amount = spl_token::ui_amount_to_amount(total_amount, mint_info.decimals);
 
+    let mut instructions: Vec<Instruction> = vec![];
+
+    instructions.push(
+        // Store final amounts instruction
+        store_amounts(
+            &hmt_escrow::id(),
+            escrow,
+            &config.owner.pubkey(),
+            total_amount,
+            recipients.len() as u64,
+        )?,
+    );
+
     // Check escrow token account balance
     let account_data = config
         .rpc_client
@@ -646,31 +613,33 @@ fn command_payout(config: &Config, escrow: &Pubkey, file_name: &str) -> CommandR
     let authority =
         EscrowProcessor::authority_id(&hmt_escrow::id(), &escrow, escrow_info.bump_seed)?;
     let mut instructions_ui_amount: f64 = 0.0;
-    let instructions: Vec<Instruction> = recipients
-        .iter()
-        .filter_map(|record| {
-            let instruction = payout(
-                &hmt_escrow::id(),
-                &escrow,
-                &config.owner.pubkey(),
-                &escrow_info.token_account,
-                &authority,
-                &record.recipient,
-                &reputation_oracle_token_account,
-                &recording_oracle_token_account,
-                &spl_token::id(),
-                spl_token::ui_amount_to_amount(record.amount, mint_info.decimals),
-            )
-            .ok();
+    instructions.extend(
+        recipients
+            .iter()
+            .filter_map(|record| {
+                let instruction = payout(
+                    &hmt_escrow::id(),
+                    &escrow,
+                    &config.owner.pubkey(),
+                    &escrow_info.token_account,
+                    &authority,
+                    &record.recipient,
+                    &reputation_oracle_token_account,
+                    &recording_oracle_token_account,
+                    &spl_token::id(),
+                    spl_token::ui_amount_to_amount(record.amount, mint_info.decimals),
+                )
+                .ok();
 
-            if instruction != None {
-                println!("{}: {}", record.recipient, record.amount);
-                instructions_ui_amount += record.amount;
-            }
+                if instruction != None {
+                    println!("{}: {}", record.recipient, record.amount);
+                    instructions_ui_amount += record.amount;
+                }
 
-            instruction
-        })
-        .collect();
+                instruction
+            })
+            .collect::<Vec<Instruction>>(),
+    );
 
     if !instructions.is_empty() {
         let total_fees = escrow_info.reputation_oracle_stake + escrow_info.recording_oracle_stake;
@@ -995,35 +964,6 @@ fn main() {
                     .help("20-byte results SHA1 hash in hex format [default: 0-byte hash]"),
             )
         )
-        .subcommand(SubCommand::with_name("store-amounts").about("Stores amounts in the escrow")
-            .arg(
-                Arg::with_name("escrow")
-                    .validator(is_pubkey)
-                    .index(1)
-                    .value_name("ESCROW_ADDRESS")
-                    .takes_value(true)
-                    .required(true)
-                    .help("Escrow address"),
-            )
-            .arg(
-                Arg::with_name("amount")
-                    .long("amount")
-                    .validator(is_amount)
-                    .value_name("AMOUNT")
-                    .takes_value(true)
-                    .required(true)
-                    .help("Total amount to be sent out from the escrow."),
-            )
-            .arg(
-                Arg::with_name("recipients")
-                    .long("recipients")
-                    .validator(is_parsable::<u64>)
-                    .value_name("COUNT")
-                    .takes_value(true)
-                    .required(true)
-                    .help("Number of recipients to receive tokens from the escrow."),
-            )
-        )
         .subcommand(SubCommand::with_name("payout").about("Pays tokens from the escrow account")
             .arg(
                 Arg::with_name("escrow")
@@ -1105,7 +1045,7 @@ fn main() {
             verbose,
             owner,
             fee_payer,
-            commitment_config: CommitmentConfig::single(),
+            commitment_config: CommitmentConfig::confirmed(),
         }
     };
 
@@ -1168,23 +1108,7 @@ fn main() {
             let escrow: Pubkey = pubkey_of(arg_matches, "escrow").unwrap();
             let results_url: String = value_of(arg_matches, "results_url").unwrap_or_default();
             let results_hash: Option<String> = value_of(arg_matches, "results_hash");
-            command_store_results(
-                &config,
-                &escrow,
-                &results_url,
-                &results_hash,
-            )
-        }
-        ("store-amounts", Some(arg_matches)) => {
-            let escrow: Pubkey = pubkey_of(arg_matches, "escrow").unwrap();
-            let amount = value_t_or_exit!(arg_matches, "amount", f64);
-            let recipients = value_t_or_exit!(arg_matches, "recipients", u64);
-            command_store_amounts(
-                &config,
-                &escrow,
-                amount,
-                recipients,
-            )
+            command_store_results(&config, &escrow, &results_url, &results_hash)
         }
         ("payout", Some(arg_matches)) => {
             let escrow: Pubkey = pubkey_of(arg_matches, "escrow").unwrap();

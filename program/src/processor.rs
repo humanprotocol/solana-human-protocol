@@ -10,7 +10,7 @@ use solana_program::{
     clock::Clock,
     decode_error::DecodeError,
     entrypoint::ProgramResult,
-    info,
+    msg,
     program_error::{PrintProgramError, ProgramError},
     program_option::COption,
     program_pack::{IsInitialized, Pack},
@@ -552,11 +552,11 @@ impl Processor {
 
         match instruction {
             EscrowInstruction::FactoryInitialize { version } => {
-                info!("Instruction: Initialize Factory");
+                msg!("Instruction: Initialize Factory");
                 Self::process_factory_initialize(program_id, accounts, version)
             }
             EscrowInstruction::Initialize { duration } => {
-                info!("Instruction: Initialize");
+                msg!("Instruction: Initialize");
                 Self::process_initialize(program_id, accounts, duration)
             }
             EscrowInstruction::Setup {
@@ -565,7 +565,7 @@ impl Processor {
                 manifest_url,
                 manifest_hash,
             } => {
-                info!("Instruction: Setup");
+                msg!("Instruction: Setup");
                 Self::process_setup(
                     accounts,
                     reputation_oracle_stake,
@@ -578,7 +578,7 @@ impl Processor {
                 final_results_url,
                 final_results_hash,
             } => {
-                info!("Instruction: Store Results");
+                msg!("Instruction: Store Results");
                 Self::process_store_results(
                     accounts,
                     &final_results_url,
@@ -589,7 +589,7 @@ impl Processor {
                 total_amount,
                 total_recipients,
             } => {
-                info!("Instruction: Store Amounts");
+                msg!("Instruction: Store Amounts");
                 Self::process_store_amounts(
                     accounts,
                     total_amount,
@@ -597,15 +597,15 @@ impl Processor {
                 )
             }
             EscrowInstruction::Payout { amount } => {
-                info!("Instruction: Payout");
+                msg!("Instruction: Payout");
                 Self::process_payout(program_id, accounts, amount)
             }
             EscrowInstruction::Cancel => {
-                info!("Instruction: Payout");
+                msg!("Instruction: Payout");
                 Self::process_cancel(program_id, accounts)
             }
             EscrowInstruction::Complete => {
-                info!("Instruction: Payout");
+                msg!("Instruction: Payout");
                 Self::process_complete(accounts)
             }
         }
@@ -618,16 +618,16 @@ impl PrintProgramError for EscrowError {
         E: 'static + std::error::Error + DecodeError<E> + PrintProgramError + FromPrimitive,
     {
         match self {
-            EscrowError::UnauthorizedSigner => info!("Error: unauthorized signer"),
-            EscrowError::EscrowExpired => info!("Error: escrow expired"),
-            EscrowError::StakeOutOfBounds => info!("Error: stake out of bounds"),
-            EscrowError::TokenAccountAuthority => info!("Error: token account authority"),
-            EscrowError::WrongTokenMint => info!("Error: wrong token mint"),
-            EscrowError::WrongState => info!("Error: wrong escrow state"),
-            EscrowError::NotEnoughBalance => info!("Error: not enough balance"),
-            EscrowError::OracleNotInitialized => info!("Error: oracle not initialized"),
-            EscrowError::TooManyPayouts => info!("Error: too many payouts"),
-            EscrowError::FactoryNotInitialized => info!("Factory isn't initialized"),
+            EscrowError::UnauthorizedSigner => msg!("Error: unauthorized signer"),
+            EscrowError::EscrowExpired => msg!("Error: escrow expired"),
+            EscrowError::StakeOutOfBounds => msg!("Error: stake out of bounds"),
+            EscrowError::TokenAccountAuthority => msg!("Error: token account authority"),
+            EscrowError::WrongTokenMint => msg!("Error: wrong token mint"),
+            EscrowError::WrongState => msg!("Error: wrong escrow state"),
+            EscrowError::NotEnoughBalance => msg!("Error: not enough balance"),
+            EscrowError::OracleNotInitialized => msg!("Error: oracle not initialized"),
+            EscrowError::TooManyPayouts => msg!("Error: too many payouts"),
+            EscrowError::FactoryNotInitialized => msg!("Factory isn't initialized"),
         }
     }
 }

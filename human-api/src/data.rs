@@ -11,24 +11,6 @@ pub struct InitFactoryArgs {
     pub gasPayerPrivate: String,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct Response {
-    /// Response data
-    pub data: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct BoolResponse {
-    /// Response data
-    pub success: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct FactoryJobs {
-    /// Response data
-    pub jobs: Vec<String>,
-}
-
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize)]
 pub struct InitJobArgs {
