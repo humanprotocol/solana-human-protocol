@@ -80,8 +80,8 @@ impl Processor {
         clock: &Clock,
         trusted_handler_info: &AccountInfo,
         allowed_states: Vec<EscrowState>,
-    ) -> Result<Escrow, ProgramError> {
-        let escrow = Escrow::unpack_unchecked(&escrow_info.data.borrow())?;
+    ) -> Result<Box<Escrow>, ProgramError> {
+        let escrow = Box::new(Escrow::unpack_unchecked(&escrow_info.data.borrow())?);
 
         // Check if escrow account exists and is initialized
         if !escrow.is_initialized() {
@@ -291,7 +291,7 @@ impl Processor {
 
         escrow.state = EscrowState::Pending;
 
-        Escrow::pack(escrow, &mut escrow_info.data.borrow_mut())?;
+        Escrow::pack(*escrow, &mut escrow_info.data.borrow_mut())?;
         Ok(())
     }
 
@@ -317,7 +317,7 @@ impl Processor {
         escrow.final_results_url = *final_results_url;
         escrow.final_results_hash = *final_results_hash;
 
-        Escrow::pack(escrow, &mut escrow_info.data.borrow_mut())?;
+        Escrow::pack(*escrow, &mut escrow_info.data.borrow_mut())?;
 
         Ok(())
     }
@@ -344,7 +344,7 @@ impl Processor {
         escrow.total_amount = total_amount;
         escrow.total_recipients = total_recipients;
 
-        Escrow::pack(escrow, &mut escrow_info.data.borrow_mut())?;
+        Escrow::pack(*escrow, &mut escrow_info.data.borrow_mut())?;
 
         Ok(())
     }
@@ -463,7 +463,7 @@ impl Processor {
             escrow.state = EscrowState::Partial;
         }
 
-        Escrow::pack(escrow, &mut escrow_info.data.borrow_mut())?;
+        Escrow::pack(*escrow, &mut escrow_info.data.borrow_mut())?;
 
         Ok(())
     }
@@ -541,7 +541,7 @@ impl Processor {
 
         escrow.state = EscrowState::Complete;
 
-        Escrow::pack(escrow, &mut escrow_info.data.borrow_mut())?;
+        Escrow::pack(*escrow, &mut escrow_info.data.borrow_mut())?;
 
         Ok(())
     }

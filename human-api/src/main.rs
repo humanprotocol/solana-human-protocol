@@ -10,6 +10,7 @@ pub mod job;
 pub mod manifest;
 pub mod responses;
 
+use crate::responses::ErrorMessage;
 pub use crate::factory::*;
 pub use crate::job::*;
 pub use crate::manifest::*;
@@ -24,6 +25,8 @@ use solana_client::rpc_filter::RpcFilterType;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
+use rocket::{request::Request, response, response::Responder };
+use rocket_contrib::json::Json;
 
 pub struct Config {
     pub factory_version: u8,
@@ -40,6 +43,16 @@ pub type Error = Box<dyn std::error::Error>;
 #[get("/ping")]
 pub fn ping() -> String {
     String::from("pong")
+}
+
+#[catch(404)]
+fn not_found(req: &Request) -> response::Result<'static> {
+    response::status::NotFound(Json(ErrorMessage { error: "not found".to_string() })).respond_to(req)
+}
+
+#[catch(422)]
+fn bad_request(req: &Request) -> response::Result<'static> {
+    response::status::BadRequest(Some(Json(ErrorMessage { error: "bad request".to_string() }))).respond_to(req)
 }
 
 pub fn rocket() -> rocket::Rocket {
@@ -91,6 +104,7 @@ pub fn rocket() -> rocket::Rocket {
         )
         .mount("/manifest", routes![validate_manifest])
         .mount("/", routes![ping])
+        .register(catchers![not_found, bad_request])
 }
 
 fn main() {

@@ -682,7 +682,7 @@ where
     };
 }
 
-#[tokio::test]
+#[::tokio::test]
 async fn test_hmt_escrow_initialize() {
     let (mut banks_client, payer, recent_blockhash) = program_test().start().await;
     let escrow_account = EscrowAccount::new();
@@ -708,7 +708,7 @@ async fn test_hmt_escrow_initialize() {
     check_escrow_account_info(initialize_check, &escrow_account, &mut banks_client).await;
 }
 
-#[tokio::test]
+#[::tokio::test]
 async fn test_hmt_escrow_setup() {
     let (mut banks_client, payer, recent_blockhash) = program_test().start().await;
     let escrow_account = EscrowAccount::new();
@@ -766,7 +766,7 @@ async fn test_hmt_escrow_setup() {
     check_escrow_account_info(setup_check, &escrow_account, &mut banks_client).await;
 }
 
-#[tokio::test]
+#[::tokio::test]
 async fn test_hmt_escrow_store_results() {
     let (mut banks_client, payer, recent_blockhash) = program_test().start().await;
     let escrow_account = EscrowAccount::new();
@@ -792,7 +792,7 @@ async fn test_hmt_escrow_store_results() {
     check_escrow_account_info(store_check, &escrow_account, &mut banks_client).await;
 }
 
-#[tokio::test]
+#[::tokio::test]
 async fn test_hmt_escrow_store_amounts() {
     let (mut banks_client, payer, recent_blockhash) = program_test().start().await;
     let escrow_account = EscrowAccount::new();
@@ -819,7 +819,7 @@ async fn test_hmt_escrow_store_amounts() {
     check_escrow_account_info(store_check, &escrow_account, &mut banks_client).await;
 }
 
-#[tokio::test]
+#[::tokio::test]
 async fn test_hmt_escrow_payout() {
     let (mut banks_client, payer, recent_blockhash) = program_test().start().await;
     let escrow_account = EscrowAccount::new();
@@ -929,7 +929,7 @@ async fn test_hmt_escrow_payout() {
     .await;
 }
 
-#[tokio::test]
+#[::tokio::test]
 async fn test_hmt_escrow_cancel() {
     let (mut banks_client, payer, recent_blockhash) = program_test().start().await;
     let escrow_account = EscrowAccount::new();
@@ -993,7 +993,7 @@ async fn test_hmt_escrow_cancel() {
     .await;
 }
 
-#[tokio::test]
+#[::tokio::test]
 async fn test_hmt_escrow_complete() {
     let (mut banks_client, payer, recent_blockhash) = program_test().start().await;
     let escrow_account = EscrowAccount::new();

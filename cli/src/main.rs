@@ -575,9 +575,7 @@ fn command_payout(config: &Config, escrow: &Pubkey, file_name: &str) -> CommandR
         .map_err(|_| format!("{} is not a valid mint address", escrow_info.token_mint))?;
     let total_amount = spl_token::ui_amount_to_amount(total_amount, mint_info.decimals);
 
-    let mut instructions: Vec<Instruction> = vec![];
-
-    instructions.push(
+    let mut instructions: Vec<Instruction> = vec![
         // Store final amounts instruction
         store_amounts(
             &hmt_escrow::id(),
@@ -586,7 +584,7 @@ fn command_payout(config: &Config, escrow: &Pubkey, file_name: &str) -> CommandR
             total_amount,
             recipients.len() as u64,
         )?,
-    );
+    ];
 
     // Check escrow token account balance
     let account_data = config
