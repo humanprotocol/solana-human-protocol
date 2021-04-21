@@ -4,7 +4,7 @@ This is implementation of the Human Protocol API, defined [as Swagger documentat
 
 ## Build and run
 
-To build and run this API you will to install Rust. For Linux and Mac OS run:
+To build and run this API you will have to install Rust. For Linux and Mac OS run:
 
 ```
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
